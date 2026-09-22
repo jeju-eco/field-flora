@@ -13,6 +13,10 @@ body{
 button,input{font:inherit;color:inherit}
 button{border:0;background:none;cursor:pointer}
 
+/* [hidden]은 브라우저 기본 스타일시트에만 있어 작성자 규칙(.sheet{display:flex} 등)에
+   항상 진다. 명시적으로 이겨두지 않으면 시트가 전체화면을 덮어 모든 탭을 가로챈다. */
+[hidden]{display:none !important}
+
 /* ── 상단 ── */
 #topbar{
   background:var(--accent-d); padding:calc(env(safe-area-inset-top) + 8px) 10px 0;
