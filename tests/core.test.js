@@ -152,6 +152,21 @@ if (fs.existsSync(dictPath)) {
     assert.ok(r.length >= 5, String(r.length));
     assert.ok(r.every((x) => x.s.toLowerCase().startsWith('quercus')), JSON.stringify(r.map(x=>x.s)));
   });
+  // 앱이 limit=2000으로 부르므로, 초성 검색 결과가 25개에서 잘리면 안 된다
+  t('초성 ㅅㄴㅁ 결과가 25종을 넘음', () => {
+    const n = C.search(real, 'ㅅㄴㅁ', 2000).length;
+    assert.ok(n > 25, '초성 결과가 ' + n + '종뿐 — 더보기가 필요 없어짐');
+  });
+  t('초성 검색이 limit에 맞춰 더 준다', () => {
+    const few = C.search(real, 'ㅅㄴㅁ', 25).length;
+    const many = C.search(real, 'ㅅㄴㅁ', 2000).length;
+    assert.strictEqual(few, 25);
+    assert.ok(many > few, `limit을 올려도 ${many}종 — 검색이 결과를 더 못 준다`);
+  });
+  t("'나무' 검색은 수천 종", () => {
+    const n = C.search(real, '나무', 5000).length;
+    assert.ok(n > 1000, String(n));
+  });
   t('실제 검색 속도 < 150ms', () => {
     const t0 = Date.now();
     C.search(real, '나무');

@@ -100,17 +100,22 @@ async function main() {
   });
   t('방금 추가한 행이 강조(flash)', () => assert.ok($('recList').querySelector('li.flash')));
 
-  // 같은 종 재탭 = 자동 증가하지 않는다 (잘못 누름 방지)
+  // 같은 종을 다시 탭하면 취소(토글)
+  type($('q'), '소나무'); await sleep(150);
+  t('이미 넣은 종은 검색결과에 ✓ 표시', () => {
+    const li = $('results').children[0];
+    assert.ok(li.classList.contains('added'), li.className);
+    assert.strictEqual(li.querySelector('.add').textContent, '✓');
+  });
+  click($('results').children[0]); await sleep(60);
+  t('재탭하면 기록이 취소됨', () => assert.strictEqual($('siteCount').textContent, '0종'));
+  t('취소 안내 표시', () =>
+    assert.ok($('toast').textContent.includes('취소됨'), $('toast').textContent));
+  t('목록에서 사라짐', () => assert.ok(!$('recList').textContent.includes('소나무')));
+  // 다시 넣어 이후 테스트를 잇는다
   type($('q'), '소나무'); await sleep(150);
   click($('results').children[0]); await sleep(60);
-  t('같은 종 재탭해도 개체수가 자동으로 늘지 않음', () =>
-    assert.strictEqual($('siteCount').textContent, '1종 / 1개체'));
-  t('이미 있음 안내 표시', () =>
-    assert.ok($('toast').textContent.includes('이미 있음'), $('toast').textContent));
-  t('중복 기록이 생기지 않음', () => {
-    const rows = $('recList').querySelectorAll('li');
-    assert.strictEqual(rows.length, 1, rows.length + '행');
-  });
+  t('다시 탭하면 재추가', () => assert.strictEqual($('siteCount').textContent, '1종 / 1개체'));
 
   // 최근 입력 버튼으로 추가
   type($('q'), '개망초'); await sleep(150);
@@ -150,6 +155,33 @@ async function main() {
     assert.strictEqual(cv.textContent, '–', '미지정인데 "' + cv.textContent + '" 표시');
     assert.ok(cv.classList.contains('unset'));
   });
+
+  console.log('[입력한 내용이 있는 기록은 확인 후 취소]');
+  {
+    // 개망초에 우점도를 넣어둔 상태에서 재탭하면 확인창이 떠야 한다
+    const rec = $('recList').querySelector('li');   // 최신 = 개망초
+    click(rec); await sleep(50);
+    click([...$('coverBtns').children].find((b) => b.dataset.v === '2')); await sleep(30);
+    click($('sheetOk')); await sleep(50);
+
+    const asked = [];
+    window.confirm = (m) => { asked.push(m); return false; };   // 사용자가 '아니오'
+    type($('q'), '개망초'); await sleep(150);
+    click($('results').children[0]); await sleep(60);
+    t('입력 내용이 있으면 확인창을 띄움', () => assert.strictEqual(asked.length, 1, JSON.stringify(asked)));
+    t('아니오를 고르면 기록이 유지됨', () => assert.ok($('recList').textContent.includes('개망초')));
+
+    window.confirm = () => true;                                 // 사용자가 '예'
+    type($('q'), '개망초'); await sleep(150);
+    click($('results').children[0]); await sleep(60);
+    t('예를 고르면 기록이 삭제됨', () => assert.ok(!$('recList').textContent.includes('개망초')));
+    // 이후 CSV 테스트를 위해 개망초를 다시 넣는다
+    type($('q'), '개망초'); await sleep(150);
+    click($('results').children[0]); await sleep(60);
+    t('삭제 후 재추가되어 2종 복귀', () =>
+      assert.ok($('siteCount').textContent.startsWith('2종'), $('siteCount').textContent));
+  }
+
   console.log('[초성·학명 검색]');
   type($('q'), 'ㅅㄱㄴㅁ'); await sleep(150);
   t('초성 검색 동작', () => assert.ok($('results').textContent.includes('신갈나무'), $('results').textContent));

@@ -88,6 +88,18 @@ main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:16px
   background:var(--card);border:1px solid var(--line);font-weight:600;
 }
 .quickgrid button:active{background:var(--accent);color:#04120a}
+.quickgrid button.on{border-color:var(--accent);color:var(--accent)}
+
+/* 검색 결과 더보기 */
+.results .more{padding:8px 12px 14px;border:0;background:none;margin-bottom:0}
+.results .more button{
+  width:100%;min-height:46px;border-radius:12px;
+  background:var(--card);border:1px dashed var(--line);color:var(--accent);
+  font-size:14px;font-weight:700;
+}
+.results .more button span{color:var(--dim);font-weight:400}
+.results .more button:active{background:var(--accent);color:#04120a}
+.results .more.done{text-align:center;color:var(--dim);font-size:12px}
 
 /* ── 기록 목록 ── */
 .reclist,.sitelist,.sumlist{list-style:none;margin:0;padding:0 12px}

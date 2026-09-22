@@ -148,32 +148,63 @@
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
-  function renderResults(list) {
+  const PAGE = 25;          // 한 번에 보여줄 검색 결과 수
+  let shownCount = PAGE;    // 현재 몇 개까지 펼쳤는지
+  let lastHits = [];        // 마지막 검색의 전체 결과
+
+  /** 검색 결과를 그린다. 전체 중 shownCount개만 보이고 나머지는 [더보기]로 펼친다. */
+  function renderResults(hits) {
+    lastHits = hits || [];
     const ul = $('results'); ul.innerHTML = '';
+    if (!lastHits.length) return;
+
     const s = cur(); const site = curSite();
     const have = new Set(s.records.filter((r) => r.siteId === site.id).map((r) => r.taxonId));
-    list.forEach((t) => {
+    lastHits.slice(0, shownCount).forEach((t) => {
+      const on = have.has(t.i);
       const li = document.createElement('li');
-      if (have.has(t.i)) li.className = 'added';
+      if (on) li.className = 'added';
       li.innerHTML =
-        `<div class="meta"><div class="nm">${esc(t.n)}${have.has(t.i) ? ' ✓' : ''}</div>` +
+        `<div class="meta"><div class="nm">${esc(t.n)}${on ? ' ✓' : ''}</div>` +
         `<div class="sc">${esc(t.s)}</div><div class="fm">${esc(t.f)}${t.matched && t.matched !== t.n ? ' · ' + esc(t.matched) : ''}</div></div>` +
-        `<button class="add" type="button" aria-label="추가">＋</button>`;
+        `<button class="add" type="button" aria-label="${on ? '취소' : '추가'}">${on ? '✓' : '＋'}</button>`;
       li.querySelector('.add').onclick = (ev) => { ev.stopPropagation(); addRecord(t); };
       li.onclick = () => addRecord(t);
       ul.appendChild(li);
     });
+
+    const rest = lastHits.length - shownCount;
+    if (rest > 0) {
+      const li = document.createElement('li');
+      li.className = 'more';
+      li.innerHTML = `<button type="button">＋ ${rest}종 더보기 <span>(전체 ${lastHits.length}종)</span></button>`;
+      li.querySelector('button').onclick = (ev) => {
+        ev.stopPropagation();
+        shownCount += PAGE * 3;
+        renderResults(lastHits);
+      };
+      ul.appendChild(li);
+    } else if (lastHits.length > PAGE) {
+      const li = document.createElement('li');
+      li.className = 'more done';
+      li.textContent = `전체 ${lastHits.length}종 모두 표시`;
+      ul.appendChild(li);
+    }
   }
 
   function renderRecent() {
     const wrap = $('recent'); wrap.innerHTML = '';
     const ids = (state.recent || []).slice(0, 14);
     if (!ids.length) { wrap.innerHTML = '<p class="hint" style="padding:0 2px">종을 추가하면 여기에 쌓여 한 번에 다시 넣을 수 있습니다.</p>'; return; }
+    const s = cur(); const site = curSite();
+    const have = new Set(s.records.filter((r) => r.siteId === site.id).map((r) => r.taxonId));
     ids.forEach((id) => {
       const t = index && index.byId.get(id);
       if (!t) return;
       const b = document.createElement('button');
-      b.type = 'button'; b.textContent = t.n;
+      b.type = 'button';
+      b.textContent = have.has(t.i) ? '✓ ' + t.n : t.n;
+      if (have.has(t.i)) b.className = 'on';
       b.onclick = () => addRecord(t);
       wrap.appendChild(b);
     });
@@ -262,19 +293,25 @@
   function renderAll() { renderTop(); renderRecList(); renderRecent(); renderSites(); renderSummary(); }
 
   /* ───────── 동작 ───────── */
+  /** 검색 결과를 탭하면 추가, 같은 종을 다시 탭하면 취소(토글) */
   function addRecord(t) {
     const s = cur(); const site = curSite();
+    const clearSearch = () => { const q = $('q'); q.value = ''; renderResults([]); q.focus(); };
     const exist = s.records.find((r) => r.siteId === site.id && r.taxonId === t.i);
+
     if (exist) {
-      // 이미 있는 종은 자동으로 개체수를 올리지 않는다. 잘못 누른 경우가 훨씬 많고,
-      // 개체수는 기록을 눌러 시트에서 정확히 입력하게 한다.
-      flashId = exist.id;
-      renderRecList();
-      toast(`${t.n} 이미 있음 — 눌러서 개체수 입력`);
-      buzz(8);
-      const q0 = $('q'); q0.value = ''; renderResults([]); q0.focus();
+      // 개체수·우점도·비고를 입력해둔 기록은 실수로 날리지 않도록 확인한다
+      const hasData = (exist.count || 1) > 1 || exist.cover || exist.note;
+      if (hasData && !confirm(`${t.n}에 입력한 내용이 있습니다. 기록을 삭제할까요?`)) { clearSearch(); return; }
+      s.records = s.records.filter((r) => r.id !== exist.id);
+      lastAdded = null;
+      buzz(20); save(true);
+      renderAll();
+      toast(`${t.n} 취소됨`);
+      clearSearch();
       return;
     }
+
     const addedId = uid();
     s.records.push({
       id: addedId, siteId: site.id, taxonId: t.i, name: t.n,
@@ -288,11 +325,7 @@
     buzz(15); save(true);   // 기록은 절대 유실되면 안 된다 — 즉시 저장
     flashId = addedId;
     renderTop(); renderRecList(); renderRecent(); renderSummary();
-    // 다음 종을 바로 칠 수 있게 검색창을 비우고 포커스를 유지한다
-    const q = $('q');
-    q.value = '';
-    renderResults([]);
-    q.focus();
+    clearSearch();          // 다음 종을 바로 칠 수 있게
   }
 
   /** 방금 추가한 기록을 되돌린다 (잘못 누른 경우) */
@@ -478,13 +511,14 @@
       clearTimeout(tmr);
       tmr = setTimeout(() => {
         if (!index) return;
-        renderResults(q.value.trim() ? C.search(index, q.value, 25) : []);
+        shownCount = PAGE;          // 새 검색이면 다시 25개부터
+        renderResults(q.value.trim() ? C.search(index, q.value, 99999) : []);
       }, 60);
     };
     q.onkeydown = (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
-        const first = $('results').querySelector('li');
+        const first = $('results').querySelector('li:not(.more)');
         if (first) first.click();   // addRecord가 검색창을 비우고 포커스를 유지한다
       }
     };
