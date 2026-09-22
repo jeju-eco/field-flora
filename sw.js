@@ -1,5 +1,5 @@
 /* 오프라인 캐시 — 앱 셸은 캐시 우선, 사전은 최초 1회 저장 후 영구 사용 */
-const CACHE = 'field-flora-v5';
+const CACHE = 'field-flora-v6';
 const ASSETS = [
   './', './index.html', './styles.css', './core.js', './app.js',
   './data/taxa.json', './manifest.webmanifest',

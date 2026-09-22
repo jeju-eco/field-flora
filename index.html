@@ -27,7 +27,13 @@
     <div class="search-wrap">
       <input id="q" type="search" placeholder="종명·학명·초성 (예: 소나무 / pinus / ㅅㄴㅁ)"
              autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done">
+      <button id="qMic" class="icon-btn mic" type="button" aria-label="음성으로 종명 입력">🎤</button>
       <button id="qClear" class="icon-btn" type="button" aria-label="지우기">✕</button>
+    </div>
+    <p id="micHint" class="michint" hidden></p>
+    <div id="vegBanner" class="vegbanner" hidden>
+      <span id="vegBannerTxt"></span>
+      <button id="vegBannerEnd" type="button">완료</button>
     </div>
     <ul id="results" class="results"></ul>
     <div id="recentWrap">
@@ -37,6 +43,23 @@
     <h3 class="section-h">이 지점 기록 <span id="siteCount" class="count">0종</span></h3>
     <p id="siteNames" class="sitenames" hidden></p>
     <ul id="recList" class="reclist"></ul>
+  </section>
+
+  <!-- 식생조사(방형구) 탭 -->
+  <section id="tab-veg" class="tab">
+    <div class="pad">
+      <button id="addPlot" class="primary big" type="button">＋ 방형구 추가 (현재 위치)</button>
+    </div>
+    <div id="plotWrap"></div>
+  </section>
+
+  <!-- 훼손수목 탭 -->
+  <section id="tab-tree" class="tab">
+    <div class="pad">
+      <button id="addTree" class="primary big" type="button">＋ 수목 기록 (현재 위치)</button>
+      <div id="treeStat" class="statgrid small"></div>
+    </div>
+    <ul id="treeList" class="reclist"></ul>
   </section>
 
   <!-- 지점 탭 -->
@@ -66,8 +89,12 @@
 
       <h3 class="section-h">내보내기</h3>
       <div class="btnrow">
-        <button id="expRec" class="primary" type="button">기록 CSV</button>
-        <button id="expMat" class="primary" type="button">조사표 CSV</button>
+        <button id="expRec" class="primary" type="button">식물상 기록</button>
+        <button id="expMat" class="primary" type="button">식물상 조사표</button>
+      </div>
+      <div class="btnrow">
+        <button id="expVeg" class="primary" type="button">식생조사표</button>
+        <button id="expTree" class="primary" type="button">훼손수목 조서</button>
       </div>
       <div class="btnrow">
         <button id="shareRec" class="ghost" type="button">공유(드라이브 저장)</button>
@@ -92,7 +119,9 @@
 </main>
 
 <nav id="tabbar">
-  <button data-tab="rec" class="on" type="button"><span>✎</span>기록</button>
+  <button data-tab="rec" class="on" type="button"><span>✎</span>식물상</button>
+  <button data-tab="veg" type="button"><span>▦</span>식생</button>
+  <button data-tab="tree" type="button"><span>🌲</span>수목</button>
   <button data-tab="site" type="button"><span>◉</span>지점</button>
   <button data-tab="sum" type="button"><span>▤</span>요약</button>
 </nav>
@@ -124,6 +153,72 @@
     <h4>조사 선택</h4>
     <ul id="surveyList" class="sitelist"></ul>
     <div class="btnrow"><button id="ssNew" class="primary" type="button">＋ 새 조사</button></div>
+  </div>
+</div>
+
+<!-- 훼손수목 입력 시트 -->
+<div id="tsheet" class="sheet" hidden>
+  <div class="sheet-bg"></div>
+  <div class="sheet-body">
+    <h4 id="tsTitle">수목 기록</h4>
+    <div class="searchrow small">
+      <input id="tsQ" type="search" placeholder="수종명 (예: 곰솔 / ㄱㅁ)" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button id="tsMic" class="icon-btn mic" type="button" aria-label="음성으로 입력">🎤</button>
+    </div>
+    <ul id="tsResults" class="results mini"></ul>
+    <p id="tsPicked" class="picked">수종을 먼저 고르세요</p>
+
+    <div class="numrow">
+      <label><span>흉고직경 cm</span>
+        <div class="stepper"><button data-f="dbh" data-d="-1" type="button">−</button>
+        <input id="tDbh" type="number" inputmode="decimal" min="0" step="1">
+        <button data-f="dbh" data-d="1" type="button">＋</button></div>
+      </label>
+      <label><span>수고 m</span>
+        <div class="stepper"><button data-f="height" data-d="-0.5" type="button">−</button>
+        <input id="tHeight" type="number" inputmode="decimal" min="0" step="0.5">
+        <button data-f="height" data-d="0.5" type="button">＋</button></div>
+      </label>
+    </div>
+    <div class="numrow">
+      <label><span>수관폭 m</span>
+        <div class="stepper"><button data-f="crown" data-d="-0.5" type="button">−</button>
+        <input id="tCrown" type="number" inputmode="decimal" min="0" step="0.5">
+        <button data-f="crown" data-d="0.5" type="button">＋</button></div>
+      </label>
+      <label><span>본수</span>
+        <div class="stepper"><button data-f="stems" data-d="-1" type="button">−</button>
+        <input id="tStems" type="number" inputmode="numeric" min="1" value="1">
+        <button data-f="stems" data-d="1" type="button">＋</button></div>
+      </label>
+    </div>
+    <p id="tSpec" class="spec"></p>
+    <div id="tActions" class="coverbtns"></div>
+    <label class="field"><span>비고</span><input id="tNote" type="text" placeholder="수형·생육상태·이식 가능성"></label>
+    <div class="btnrow">
+      <button id="tsDel" class="danger" type="button">삭제</button>
+      <button id="tsOk" class="primary" type="button">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 방형구 입력 시트 -->
+<div id="psheet" class="sheet" hidden>
+  <div class="sheet-bg"></div>
+  <div class="sheet-body">
+    <h4 id="psTitle">방형구</h4>
+    <label class="field"><span>이름</span><input id="pName" type="text" placeholder="Q1"></label>
+    <div class="chiprow" id="pSizes"></div>
+    <div class="numrow">
+      <label><span>경사 °</span><input id="pSlope" type="number" inputmode="numeric" min="0" max="90"></label>
+      <label><span>방위</span><input id="pAspect" type="text" placeholder="N / SW"></label>
+      <label><span>해발 m</span><input id="pElev" type="number" inputmode="numeric"></label>
+    </div>
+    <label class="field"><span>비고</span><input id="pNote" type="text" placeholder="입지·토양·교란 등"></label>
+    <div class="btnrow">
+      <button id="psDel" class="danger" type="button">삭제</button>
+      <button id="psOk" class="primary" type="button">저장</button>
+    </div>
   </div>
 </div>
 

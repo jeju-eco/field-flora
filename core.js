@@ -103,6 +103,64 @@
     { v: '5', label: '5', desc: '피도 75~100%' },
   ];
 
+  /* ── 식생조사(방형구) ──
+   * 층위는 국립생태원 자연환경조사 지침의 교목/아교목/관목/초본 4층 체계. */
+  const LAYERS = [
+    { v: 'T1', label: '교목', desc: '상층 수관' },
+    { v: 'T2', label: '아교목', desc: '중층' },
+    { v: 'S', label: '관목', desc: '2m 이하 목본' },
+    { v: 'H', label: '초본', desc: '초본층' },
+  ];
+  const LAYER_LABEL = LAYERS.reduce((m, x) => { m[x.v] = x.label; return m; }, {});
+
+  /** 방형구 규격 프리셋 — 층위별 표준 조사구 크기 */
+  const PLOT_SIZES = ['2×2', '5×5', '10×10', '20×20', '100㎡', '400㎡'];
+
+  /* ── 훼손수목(이식/벌채 대상) ──
+   * 흉고직경(DBH)은 지상 1.2m 기준. 수고는 m. */
+  const TREE_ACTIONS = [
+    { v: 'keep', label: '존치' },
+    { v: 'move', label: '이식' },
+    { v: 'cut', label: '벌채' },
+  ];
+  const TREE_ACTION_LABEL = TREE_ACTIONS.reduce((m, x) => { m[x.v] = x.label; return m; }, {});
+
+  /** 흉고직경으로 대략의 규격 등급 — 이식 난이도 가늠용 */
+  function dbhClass(dbh) {
+    const d = Number(dbh) || 0;
+    if (d <= 0) return '';
+    if (d < 10) return '소경목';
+    if (d < 20) return '중경목';
+    if (d < 40) return '대경목';
+    return '노거수급';
+  }
+
+  /** 수관폭·수고·흉고직경으로 표준 수목 규격 표기 (예: H4.0×B15) */
+  function treeSpec(t) {
+    const p = [];
+    if (Number(t.height) > 0) p.push('H' + Number(t.height).toFixed(1));
+    if (Number(t.dbh) > 0) p.push('B' + Number(t.dbh));
+    if (Number(t.crown) > 0) p.push('W' + Number(t.crown).toFixed(1));
+    return p.join('×');
+  }
+
+  /** 훼손수목 집계 — 조치별 본수와 수종 수 */
+  function summarizeTrees(trees) {
+    const list = trees || [];
+    const byAction = {};
+    TREE_ACTIONS.forEach((a) => { byAction[a.v] = { count: 0, stems: 0 }; });
+    const taxa = new Set();
+    let stems = 0;
+    list.forEach((t) => {
+      const n = Math.max(1, Number(t.stems) || 1);
+      const a = byAction[t.action] || (byAction[t.action] = { count: 0, stems: 0 });
+      a.count += 1; a.stems += n;
+      stems += n;
+      if (t.name) taxa.add(t.name);
+    });
+    return { total: list.length, stems, taxaCount: taxa.size, byAction };
+  }
+
   /** 좌표 십진도 -> 도분초 문자열 */
   function toDMS(deg, isLat) {
     if (deg === null || deg === undefined || isNaN(deg)) return '';
@@ -202,6 +260,74 @@
     return lines.join('\r\n');
   }
 
+  /** 식생조사표 CSV — 방형구별 층위·우점도. 실제 식생조사야장 형식. */
+  function toVegCSV(survey) {
+    const CRLF = '\r\n';
+    const plots = (survey.plots || []);
+    const head = [
+      ['식생조사표'],
+      ['조사명', survey.title || ''],
+      ['조사일', survey.date || ''],
+      ['조사자', survey.surveyor || ''],
+      [],
+    ];
+    const lines = head.map((r) => r.map(csvCell).join(','));
+    plots.forEach((p) => {
+      lines.push([`■ ${p.name || '방형구'}`].map(csvCell).join(','));
+      lines.push([
+        '방형구크기', p.size || '', '경사(°)', p.slope || '', '방위', p.aspect || '',
+        '해발(m)', p.elev || '', '위도', p.lat == null ? '' : p.lat, '경도', p.lng == null ? '' : p.lng,
+      ].map(csvCell).join(','));
+      if (p.note) lines.push(['비고', p.note].map(csvCell).join(','));
+      lines.push(['층위', '식피율(%)', '평균수고(m)'].map(csvCell).join(','));
+      LAYERS.forEach((L) => {
+        const c = (p.cover || {})[L.v] || {};
+        lines.push([L.label, c.rate == null ? '' : c.rate, c.height == null ? '' : c.height].map(csvCell).join(','));
+      });
+      lines.push(['층위', '국명', '학명', '과명', '우점도', '비고'].map(csvCell).join(','));
+      LAYERS.forEach((L) => {
+        (p.items || []).filter((it) => it.layer === L.v).forEach((it) => {
+          lines.push([L.label, it.name || '', it.scientific || '', it.family || '', it.cover || '', it.note || '']
+            .map(csvCell).join(','));
+        });
+      });
+      lines.push('');
+    });
+    return '\ufeff' + lines.join(CRLF);
+  }
+
+  /** 훼손수목 조서 CSV — 이식/벌채 대상 목록. 수량 합계를 자동 계산한다. */
+  function toTreeCSV(survey) {
+    const CRLF = '\r\n';
+    const trees = survey.trees || [];
+    const lines = [
+      ['훼손수목 조서'],
+      ['조사명', survey.title || ''],
+      ['조사일', survey.date || ''],
+      ['조사자', survey.surveyor || ''],
+      [],
+      ['연번', '수종', '학명', '과명', '흉고직경(cm)', '수고(m)', '수관폭(m)', '규격', '본수', '조치', '위도', '경도', '비고'],
+    ].map((r) => r.map(csvCell).join(','));
+
+    trees.forEach((t, i) => {
+      lines.push([
+        i + 1, t.name || '', t.scientific || '', t.family || '',
+        t.dbh || '', t.height || '', t.crown || '', treeSpec(t),
+        Math.max(1, Number(t.stems) || 1), TREE_ACTION_LABEL[t.action] || '',
+        t.lat == null ? '' : t.lat, t.lng == null ? '' : t.lng, t.note || '',
+      ].map(csvCell).join(','));
+    });
+
+    const sum = summarizeTrees(trees);
+    lines.push('');
+    lines.push(['합계', '', '', '', '', '', '', '', sum.stems, '', '', '', `${sum.taxaCount}종`].map(csvCell).join(','));
+    TREE_ACTIONS.forEach((a) => {
+      const b = sum.byAction[a.v];
+      if (b && b.count) lines.push([a.label, '', '', '', '', '', '', '', b.stems, `${b.count}건`, '', '', ''].map(csvCell).join(','));
+    });
+    return '\ufeff' + lines.join(CRLF);
+  }
+
   function fileStamp(survey) {
     const d = (survey.date || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
     const t = (survey.title || '조사').replace(/[\\/:*?"<>|]/g, '_');
@@ -211,5 +337,7 @@
   return {
     norm, chosung, isChosungQuery, buildIndex, search,
     COVER, toDMS, summarize, toRecordsCSV, toMatrixCSV, fileStamp, csvCell,
+    LAYERS, LAYER_LABEL, PLOT_SIZES, TREE_ACTIONS, TREE_ACTION_LABEL,
+    dbhClass, treeSpec, summarizeTrees, toVegCSV, toTreeCSV,
   };
 });
