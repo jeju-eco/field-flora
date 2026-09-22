@@ -75,6 +75,7 @@
   let index = null;        // 종 사전 검색 인덱스
   let sheetCtx = null;     // 우점도 시트 대상
   let flashId = null;      // 방금 추가/변경된 기록 — 잠깐 강조 표시
+  let lastAdded = null;    // 직전에 추가한 기록 — 취소(undo) 대상
 
   function newSurvey(title) {
     const s = {
@@ -101,8 +102,24 @@
   function toast(msg) {
     const el = $('toast');
     el.textContent = msg; el.hidden = false;
+    el.classList.remove('withbtn');
     clearTimeout(el._t);
     el._t = setTimeout(() => { el.hidden = true; }, 1800);
+  }
+  /** 취소 버튼이 달린 토스트 — 잘못 누른 기록을 바로 되돌린다 */
+  function showUndo(msg) {
+    const el = $('toast');
+    el.innerHTML = '';
+    el.classList.add('withbtn');
+    const span = document.createElement('span');
+    span.textContent = msg;
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'undo'; btn.textContent = '취소';
+    btn.onclick = (ev) => { ev.stopPropagation(); clearTimeout(el._t); el.hidden = true; undoLast(); };
+    el.appendChild(span); el.appendChild(btn);
+    el.hidden = false;
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.hidden = true; lastAdded = null; }, 4000);
   }
   function buzz(ms) { if (navigator.vibrate) navigator.vibrate(ms || 12); }
 
@@ -189,7 +206,7 @@
         `<span class="idx">${rows.length - i}</span>` +
         `<div class="meta"><div class="nm">${esc(r.name)}${cnt}</div>` +
         `<div class="sc">${esc(r.scientific)}${r.family ? ' · ' + esc(r.family) : ''}</div></div>` +
-        `<button class="cv" type="button">${esc(r.cover || r.count || 1)}</button>`;
+        `<button class="cv${r.cover ? '' : ' unset'}" type="button">${r.cover ? esc(r.cover) : '–'}</button>`;
       li.querySelector('.cv').onclick = (ev) => { ev.stopPropagation(); openSheet(r); };
       li.onclick = () => openSheet(r);
       ul.appendChild(li);
@@ -248,20 +265,25 @@
   function addRecord(t) {
     const s = cur(); const site = curSite();
     const exist = s.records.find((r) => r.siteId === site.id && r.taxonId === t.i);
-    let addedId;
     if (exist) {
-      exist.count = (exist.count || 1) + 1;
-      addedId = exist.id;
-      toast(`${t.n} +1 (${exist.count})`);
-    } else {
-      addedId = uid();
-      s.records.push({
-        id: addedId, siteId: site.id, taxonId: t.i, name: t.n,
-        scientific: t.s || '', family: t.f || '', count: 1, cover: '', note: '', at: Date.now(),
-      });
-      const n = new Set(s.records.filter((r) => r.siteId === site.id).map((r) => r.taxonId)).size;
-      toast(`${t.n} 추가 · ${site.name} ${n}종`);
+      // 이미 있는 종은 자동으로 개체수를 올리지 않는다. 잘못 누른 경우가 훨씬 많고,
+      // 개체수는 기록을 눌러 시트에서 정확히 입력하게 한다.
+      flashId = exist.id;
+      renderRecList();
+      toast(`${t.n} 이미 있음 — 눌러서 개체수 입력`);
+      buzz(8);
+      const q0 = $('q'); q0.value = ''; renderResults([]); q0.focus();
+      return;
     }
+    const addedId = uid();
+    s.records.push({
+      id: addedId, siteId: site.id, taxonId: t.i, name: t.n,
+      scientific: t.s || '', family: t.f || '', count: 1, cover: '', note: '', at: Date.now(),
+    });
+    const n = new Set(s.records.filter((r) => r.siteId === site.id).map((r) => r.taxonId)).size;
+    lastAdded = { id: addedId, name: t.n, siteId: site.id };
+    showUndo(`${t.n} 추가 · ${site.name} ${n}종`);
+
     state.recent = [t.i].concat((state.recent || []).filter((x) => x !== t.i)).slice(0, 30);
     buzz(15); save(true);   // 기록은 절대 유실되면 안 된다 — 즉시 저장
     flashId = addedId;
@@ -271,6 +293,20 @@
     q.value = '';
     renderResults([]);
     q.focus();
+  }
+
+  /** 방금 추가한 기록을 되돌린다 (잘못 누른 경우) */
+  function undoLast() {
+    if (!lastAdded) return;
+    const s = cur();
+    const before = s.records.length;
+    s.records = s.records.filter((r) => r.id !== lastAdded.id);
+    if (s.records.length === before) { lastAdded = null; return; }
+    const nm = lastAdded.name;
+    lastAdded = null;
+    save(true); renderAll();
+    toast(`${nm} 취소됨`);
+    buzz(20);
   }
 
   function openSheet(rec) {

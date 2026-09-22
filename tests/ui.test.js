@@ -14,6 +14,8 @@ function t(name, fn) {
   catch (e) { fail++; console.log('  FAIL ' + name + '\n       ' + (e && e.message)); }
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** CSV 문자열을 줄 배열로 (BOM 제거, CRLF/LF 모두 허용) */
+const csvRows = (s) => String(s).replace(/^\ufeff/, '').split(String.fromCharCode(13, 10)).join('\n').split('\n');
 
 // 실제 사전에서 소수만 뽑아 빠르게 구동
 const dict = JSON.parse(fs.readFileSync(path.join(WEB, 'data', 'taxa.json'), 'utf8'));
@@ -98,14 +100,17 @@ async function main() {
   });
   t('방금 추가한 행이 강조(flash)', () => assert.ok($('recList').querySelector('li.flash')));
 
-  // 같은 종 재탭 = 개체수 증가 (종수는 유지)
+  // 같은 종 재탭 = 자동 증가하지 않는다 (잘못 누름 방지)
   type($('q'), '소나무'); await sleep(150);
   click($('results').children[0]); await sleep(60);
-  t('같은 종 재탭 시 종수 유지·개체수 증가', () => assert.strictEqual($('siteCount').textContent, '1종 / 2개체'));
-  t('같은 종 재탭 시 개체수 +1', () => {
-    assert.ok($('toast').textContent.includes('+1'), $('toast').textContent);
+  t('같은 종 재탭해도 개체수가 자동으로 늘지 않음', () =>
+    assert.strictEqual($('siteCount').textContent, '1종 / 1개체'));
+  t('이미 있음 안내 표시', () =>
+    assert.ok($('toast').textContent.includes('이미 있음'), $('toast').textContent));
+  t('중복 기록이 생기지 않음', () => {
+    const rows = $('recList').querySelectorAll('li');
+    assert.strictEqual(rows.length, 1, rows.length + '행');
   });
-  t('개체수 2 이상이면 목록에 ×2 표시', () => assert.ok($('recList').textContent.includes('×2'), $('recList').textContent));
 
   // 최근 입력 버튼으로 추가
   type($('q'), '개망초'); await sleep(150);
@@ -116,6 +121,35 @@ async function main() {
     assert.ok(txt.includes('소나무') && txt.includes('개망초'), txt);
   });
 
+  console.log('[잘못 누른 기록 취소]');
+  t('추가 직후 토스트에 취소 버튼 노출', () => {
+    const btn = $('toast').querySelector('.undo');
+    assert.ok(btn, '취소 버튼 없음: ' + $('toast').textContent);
+    assert.strictEqual(btn.textContent, '취소');
+  });
+  {
+    // 실수로 추가한 종을 취소하면 목록·집계에서 사라져야 한다
+    type($('q'), '곰솔'); await sleep(150);
+    click($('results').children[0]); await sleep(60);
+    const before = $('siteCount').textContent;
+    t('실수 추가 후 3종', () => assert.ok(before.startsWith('3종'), before));
+    click($('toast').querySelector('.undo')); await sleep(60);
+    t('취소하면 2종으로 복귀', () => assert.ok($('siteCount').textContent.startsWith('2종'), $('siteCount').textContent));
+    t('취소된 종이 목록에서 사라짐', () => assert.ok(!$('recList').textContent.includes('곰솔')));
+    t('취소된 종이 나열줄에서도 사라짐', () => assert.ok(!$('siteNames').textContent.includes('곰솔')));
+    t('취소 토스트 표시', () => assert.ok($('toast').textContent.includes('취소됨'), $('toast').textContent));
+  }
+  t('취소 버튼은 한 번만 동작(연타해도 다른 기록 안 지움)', () => {
+    const n = $('recList').querySelectorAll('li').length;
+    assert.strictEqual(n, 2, n + '행');
+  });
+
+  console.log('[우점도 표시]');
+  t('우점도 미지정이면 개체수가 아니라 – 표시', () => {
+    const cv = $('recList').querySelector('.cv');
+    assert.strictEqual(cv.textContent, '–', '미지정인데 "' + cv.textContent + '" 표시');
+    assert.ok(cv.classList.contains('unset'));
+  });
   console.log('[초성·학명 검색]');
   type($('q'), 'ㅅㄱㄴㅁ'); await sleep(150);
   t('초성 검색 동작', () => assert.ok($('results').textContent.includes('신갈나무'), $('results').textContent));
@@ -188,9 +222,11 @@ async function main() {
     const rows = saved.replace(/^\ufeff/, '').split('\r\n');
     assert.strictEqual(rows.length, 4, rows.length + ':' + rows[0]);
   });
-  t('중복 탭한 소나무는 개체수 2로 합산', () => {
-    const row = saved.split('\r\n').find((r) => r.includes('소나무'));
-    assert.ok(/,소나무,Pinus densiflora,소나무과,2,/.test(row), row);
+  t('재탭해도 중복 행 없이 개체수 1 유지', () => {
+    const rows = csvRows(saved).filter((r) => r.includes('소나무'));
+
+    assert.strictEqual(rows.length, 1, '중복 행 ' + rows.length);
+    assert.ok(/,소나무,Pinus densiflora,소나무과,1,/.test(rows[0]), rows[0]);
   });
   t('우점도는 지정한 개망초 행에만 기록', () => {
     const row = saved.split('\r\n').find((r) => r.includes('개망초'));

@@ -160,9 +160,21 @@ button.big{width:100%;font-size:17px}
 
 /* ── 토스트 ── */
 .toast{
-  position:fixed;left:50%;bottom:calc(76px + env(safe-area-inset-bottom));transform:translateX(-50%);
+  position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);
   background:#1f3a2a;border:1px solid var(--accent);color:var(--fg);
   padding:11px 18px;border-radius:22px;z-index:60;font-size:14px;font-weight:600;
-  box-shadow:0 6px 20px rgba(0,0,0,.4);max-width:90vw;text-align:center;
+  box-shadow:0 6px 24px rgba(0,0,0,.55);max-width:92vw;text-align:center;
 }
+/* 취소 버튼이 붙은 토스트 */
+.toast.withbtn{
+  display:flex;align-items:center;gap:12px;padding:8px 8px 8px 16px;text-align:left;
+}
+.toast .undo{
+  flex:0 0 auto;min-height:40px;padding:0 16px;border-radius:20px;
+  background:var(--accent);color:#04120a;font-weight:800;font-size:14px;
+}
+.toast .undo:active{background:#2f8f55}
+
+/* 우점도 미지정 표시 */
+.reclist .cv.unset{background:transparent;border:1px dashed var(--line);color:var(--dim);font-weight:400}
 .empty{padding:22px 14px;text-align:center;color:var(--dim);font-size:14px}
