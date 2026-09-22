@@ -5,7 +5,7 @@ import os
 
 from PIL import Image, ImageChops, ImageDraw
 
-OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "icons")
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "icons")
 BG = (20, 83, 45)
 LEAF = (63, 174, 107)
 VEIN = (12, 48, 27)

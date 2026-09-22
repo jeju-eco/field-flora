@@ -4,9 +4,9 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const C = require('../web/core.js');
+const C = require('../core.js');
 
-const dict = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'web', 'data', 'taxa.json'), 'utf8'));
+const dict = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'taxa.json'), 'utf8'));
 const find = (n) => {
   const t = dict.taxa.find((x) => x.n === n);
   if (!t) throw new Error('사전에 없음: ' + n);

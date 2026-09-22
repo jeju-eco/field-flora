@@ -3,7 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const C = require('../web/core.js');
+const C = require('../core.js');
 
 let pass = 0, fail = 0;
 function t(name, fn) {
@@ -137,7 +137,7 @@ t('fileStamp 금지문자 제거', () => {
 });
 
 console.log('[실제 사전]');
-const dictPath = path.join(__dirname, '..', 'web', 'data', 'taxa.json');
+const dictPath = path.join(__dirname, '..', 'data', 'taxa.json');
 if (fs.existsSync(dictPath)) {
   const dict = JSON.parse(fs.readFileSync(dictPath, 'utf8'));
   const real = C.buildIndex(dict.taxa);

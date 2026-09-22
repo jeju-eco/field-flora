@@ -9,7 +9,7 @@
     "dict": "python tools/build_dict.py",
     "icons": "python tools/make_icons.py",
     "sample": "node tools/sample_export.js",
-    "serve": "python -m http.server 8777 --directory web"
+    "serve": "python -m http.server 8777"
   },
   "license": "MIT",
   "devDependencies": {

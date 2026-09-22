@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { JSDOM, VirtualConsole } = require('jsdom');
 
-const WEB = path.join(__dirname, '..', 'web');
+const WEB = path.join(__dirname, '..');
 let pass = 0, fail = 0;
 function t(name, fn) {
   try { fn(); pass++; console.log('  ok  ' + name); }

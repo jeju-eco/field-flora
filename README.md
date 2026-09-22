@@ -63,19 +63,19 @@ node tests/ui.test.js      # jsdom UI 통합 42개
 node tools/sample_export.js
 
 # 로컬 실행
-cd web && python -m http.server 8777
+npm run serve      # http://localhost:8777
 ```
 
 ### 구조
 
 ```
-web/
-  index.html      화면 구조
-  styles.css      모바일 UI (탭 타겟 최소 56px)
-  core.js         순수 로직 — 검색/집계/CSV (DOM 비의존, Node 테스트 가능)
-  app.js          DOM 바인딩 + IndexedDB 저장
-  sw.js           오프라인 캐시
-  data/taxa.json  종 사전 17,323종
+index.html        화면 구조
+styles.css        모바일 UI (탭 타겟 최소 56px)
+core.js           순수 로직 — 검색/집계/CSV (DOM 비의존, Node 테스트 가능)
+app.js            DOM 바인딩 + IndexedDB 저장
+sw.js             오프라인 캐시
+data/taxa.json    종 사전 17,323종
+icons/            앱 아이콘
 tools/            사전·아이콘·샘플 생성기
 tests/            테스트
 samples/          실제 생성된 CSV 예시

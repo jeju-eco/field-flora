@@ -1,6 +1,6 @@
 """plant_atlas SQLite -> 현장 빠른입력기용 종 사전(JSON) 추출.
 
-원본 DB는 읽기 전용으로만 연다. 출력: web/data/taxa.json
+원본 DB는 읽기 전용으로만 연다. 출력: data/taxa.json
 """
 from __future__ import annotations
 
@@ -89,7 +89,7 @@ def build_index(taxa: list[dict]) -> dict[str, list[int]]:
 def main() -> int:
     db = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_DB
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    out_path = os.path.join(root, "web", "data", "taxa.json")
+    out_path = os.path.join(root, "data", "taxa.json")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
     taxa = load_taxa(db)
