@@ -1,0 +1,12 @@
+﻿연번,과,국명,학명,St.1,St.2,St.3
+1,국화과,개망초,Erigeron annuus,+,,
+2,국화과,쑥,Artemisia indica,2,,
+3,녹나무과,비목나무,Lindera erythrocarpa,,,+
+4,벼과,억새,Miscanthus sinensis,3,,
+5,벼과,조릿대,Sasamorpha borealis,,,5
+6,소나무과,곰솔,Pinus thunbergii,2,,
+7,소나무과,소나무,Pinus densiflora,4,2,
+8,잔고사리과,고사리,Pteridium aquilinum,,2,
+9,참나무과,신갈나무,Quercus mongolica,,3,4
+10,콩과,칡,Pueraria lobata,,1,
+,,출현종수,,5,4,3

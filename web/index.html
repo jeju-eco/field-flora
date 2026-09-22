@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#14532d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="식물상기록">
+<title>현장 식물상 빠른입력기</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="title-row">
+    <button id="surveyBtn" class="chip" type="button"><span id="surveyTitle">조사 선택</span> ▾</button>
+    <span id="netBadge" class="badge off">오프라인</span>
+  </div>
+  <div class="site-row" id="siteRow"></div>
+</header>
+
+<main>
+  <!-- 기록 탭 -->
+  <section id="tab-rec" class="tab active">
+    <div class="search-wrap">
+      <input id="q" type="search" placeholder="종명·학명·초성 (예: 소나무 / pinus / ㅅㄴㅁ)"
+             autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done">
+      <button id="qClear" class="icon-btn" type="button" aria-label="지우기">✕</button>
+    </div>
+    <ul id="results" class="results"></ul>
+    <div id="recentWrap">
+      <h3 class="section-h">최근 입력 <span class="hint">탭하면 즉시 추가</span></h3>
+      <div id="recent" class="quickgrid"></div>
+    </div>
+    <h3 class="section-h">이 지점 기록 <span id="siteCount" class="count">0종</span></h3>
+    <ul id="recList" class="reclist"></ul>
+  </section>
+
+  <!-- 지점 탭 -->
+  <section id="tab-site" class="tab">
+    <div class="pad">
+      <button id="addSite" class="primary big" type="button">＋ 지점 추가 (현재 위치)</button>
+      <p class="hint">GPS가 잡히면 좌표·고도가 자동 입력됩니다. 실내·음영지에서는 빈칸으로 추가된 뒤 나중에 수정할 수 있습니다.</p>
+    </div>
+    <ul id="siteList" class="sitelist"></ul>
+  </section>
+
+  <!-- 요약/내보내기 탭 -->
+  <section id="tab-sum" class="tab">
+    <div class="pad">
+      <div class="statgrid">
+        <div class="stat"><b id="stTaxa">0</b><span>총 출현종</span></div>
+        <div class="stat"><b id="stSites">0</b><span>조사지점</span></div>
+        <div class="stat"><b id="stRecs">0</b><span>총 기록</span></div>
+        <div class="stat"><b id="stFam">0</b><span>과</span></div>
+      </div>
+      <h3 class="section-h">지점별 출현종수</h3>
+      <ul id="sumSites" class="sumlist"></ul>
+      <h3 class="section-h">과별 종수</h3>
+      <ul id="sumFam" class="sumlist"></ul>
+
+      <h3 class="section-h">내보내기</h3>
+      <div class="btnrow">
+        <button id="expRec" class="primary" type="button">기록 CSV</button>
+        <button id="expMat" class="primary" type="button">조사표 CSV</button>
+      </div>
+      <div class="btnrow">
+        <button id="shareRec" class="ghost" type="button">공유(드라이브 저장)</button>
+        <button id="expJson" class="ghost" type="button">백업 JSON</button>
+      </div>
+      <p class="hint">공유 → “Drive에 저장”을 누르면 구글드라이브로 올라갑니다. 인터넷이 없으면 먼저 CSV로 내려받아 두고 나중에 올리면 됩니다.</p>
+
+      <h3 class="section-h">조사 정보</h3>
+      <label class="field"><span>조사명</span><input id="fTitle" type="text" placeholder="○○ 소규모환경영향평가"></label>
+      <label class="field"><span>조사일</span><input id="fDate" type="date"></label>
+      <label class="field"><span>조사자</span><input id="fSurveyor" type="text" placeholder="이름"></label>
+
+      <h3 class="section-h">관리</h3>
+      <div class="btnrow">
+        <button id="newSurvey" class="ghost" type="button">새 조사 시작</button>
+        <button id="importJson" class="ghost" type="button">백업 불러오기</button>
+      </div>
+      <input id="fileInput" type="file" accept="application/json" hidden>
+      <p class="hint" id="dictInfo">사전 로딩 중…</p>
+    </div>
+  </section>
+</main>
+
+<nav id="tabbar">
+  <button data-tab="rec" class="on" type="button"><span>✎</span>기록</button>
+  <button data-tab="site" type="button"><span>◉</span>지점</button>
+  <button data-tab="sum" type="button"><span>▤</span>요약</button>
+</nav>
+
+<!-- 우점도 선택 시트 -->
+<div id="sheet" class="sheet" hidden>
+  <div class="sheet-bg"></div>
+  <div class="sheet-body">
+    <h4 id="sheetTitle">우점도 / 개체수</h4>
+    <div id="coverBtns" class="coverbtns"></div>
+    <div class="countrow">
+      <button id="cMinus" type="button">−</button>
+      <input id="cNum" type="number" inputmode="numeric" min="0" value="1">
+      <button id="cPlus" type="button">＋</button>
+      <span>개체</span>
+    </div>
+    <label class="field"><span>비고</span><input id="cNote" type="text" placeholder="생육상태·위치 등"></label>
+    <div class="btnrow">
+      <button id="sheetDel" class="danger" type="button">삭제</button>
+      <button id="sheetOk" class="primary" type="button">확인</button>
+    </div>
+  </div>
+</div>
+
+<!-- 조사 선택 시트 -->
+<div id="ssheet" class="sheet" hidden>
+  <div class="sheet-bg"></div>
+  <div class="sheet-body">
+    <h4>조사 선택</h4>
+    <ul id="surveyList" class="sitelist"></ul>
+    <div class="btnrow"><button id="ssNew" class="primary" type="button">＋ 새 조사</button></div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

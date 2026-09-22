@@ -1,0 +1,17 @@
+{
+  "name": "현장 식물상 빠른입력기",
+  "short_name": "식물상기록",
+  "description": "현장에서 종·개체수·지점을 한 번의 탭으로 기록하고 조사표 CSV로 내보내는 오프라인 앱",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1512",
+  "theme_color": "#14532d",
+  "lang": "ko",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
