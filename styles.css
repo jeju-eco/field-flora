@@ -38,6 +38,7 @@ button{border:0;background:none;cursor:pointer}
 }
 .site-tab.on{background:var(--bg);color:var(--fg)}
 .site-tab .n{font-size:11px;color:var(--dim);margin-left:5px}
+.site-tab.on .n{color:var(--accent);font-weight:700}
 
 /* ── 본문 ── */
 main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:16px}
@@ -50,6 +51,13 @@ main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:16px
 }
 .hint{font-size:12px;color:var(--dim);font-weight:400;line-height:1.5}
 .count{margin-left:auto;color:var(--accent);font-weight:700}
+
+/* 이 지점에서 나온 종 이름 나열 — 현장에서 즉시 확인 */
+.sitenames{
+  margin:0 12px 8px;padding:10px 12px;border-radius:10px;
+  background:var(--card);border:1px solid var(--line);
+  font-size:13px;line-height:1.6;color:var(--fg);
+}
 
 /* ── 검색 ── */
 .search-wrap{position:sticky;top:0;z-index:10;background:var(--bg);padding:10px 12px;display:flex;gap:8px}
@@ -89,7 +97,11 @@ main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:16px
 }
 .reclist .idx{color:var(--dim);font-size:12px;min-width:22px}
 .reclist .nm{font-weight:600}
+.reclist .ct{margin-left:6px;font-size:12px;font-weight:700;color:var(--accent)}
 .reclist .sc{font-size:11px;color:var(--dim);font-style:italic}
+/* 방금 추가된 기록을 잠깐 강조 */
+@keyframes flashin{0%{background:var(--accent);color:#04120a}100%{background:var(--card)}}
+.reclist li.flash{animation:flashin 1.2s ease-out;border-color:var(--accent)}
 .reclist .cv{
   margin-left:auto;min-width:44px;height:38px;border-radius:10px;background:var(--accent-d);
   color:var(--fg);font-weight:700;display:flex;align-items:center;justify-content:center;flex:0 0 auto;
@@ -101,6 +113,8 @@ main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:16px
 .sitelist .sname{font-weight:700}
 .sitelist .scoord{font-size:11px;color:var(--dim)}
 .sitelist .sn{margin-left:auto;color:var(--accent);font-weight:700;font-size:13px}
+.sitelist .del{width:40px;height:40px;border-radius:10px;color:var(--dim);font-size:16px;flex:0 0 auto;margin-left:6px;border:1px solid var(--line)}
+.sitelist .del:active{background:var(--danger);color:#fff}
 
 /* ── 버튼/필드 ── */
 button.primary{background:var(--accent);color:#04120a;font-weight:700;border-radius:12px;min-height:var(--tap);padding:0 18px;flex:1}

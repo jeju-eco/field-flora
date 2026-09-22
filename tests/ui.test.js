@@ -83,24 +83,38 @@ async function main() {
 
   click($('results').children[0]);
   await sleep(60);
-  t('탭 한 번에 기록 추가', () => assert.strictEqual($('siteCount').textContent, '1종'));
+  t('탭 한 번에 기록 추가', () => assert.strictEqual($('siteCount').textContent, '1종 / 1개체'));
   t('기록 목록에 표시', () => assert.ok($('recList').textContent.includes('소나무')));
   t('학명 함께 저장', () => assert.ok($('recList').textContent.includes('Pinus')));
   t('최근 입력에 축적', () => assert.ok($('recent').textContent.includes('소나무')));
   t('토스트 노출', () => assert.ok(!$('toast').hidden && $('toast').textContent.includes('추가')));
+  t('추가 직후 검색창이 비워짐(다음 종 바로 입력)', () => assert.strictEqual($('q').value, ''));
+  t('추가 직후 검색 결과도 비워짐', () => assert.strictEqual($('results').children.length, 0));
+  t('토스트에 현재 지점 종수 표시', () => assert.ok(/St\.1\s*1종/.test($('toast').textContent), $('toast').textContent));
+  t('출현종 나열줄에 표시', () => {
+    const el = $('siteNames');
+    assert.strictEqual(el.hidden, false);
+    assert.ok(el.textContent.includes('소나무'), el.textContent);
+  });
+  t('방금 추가한 행이 강조(flash)', () => assert.ok($('recList').querySelector('li.flash')));
 
   // 같은 종 재탭 = 개체수 증가 (종수는 유지)
   type($('q'), '소나무'); await sleep(150);
   click($('results').children[0]); await sleep(60);
-  t('같은 종 재탭 시 종수 유지', () => assert.strictEqual($('siteCount').textContent, '1종'));
+  t('같은 종 재탭 시 종수 유지·개체수 증가', () => assert.strictEqual($('siteCount').textContent, '1종 / 2개체'));
   t('같은 종 재탭 시 개체수 +1', () => {
     assert.ok($('toast').textContent.includes('+1'), $('toast').textContent);
   });
+  t('개체수 2 이상이면 목록에 ×2 표시', () => assert.ok($('recList').textContent.includes('×2'), $('recList').textContent));
 
   // 최근 입력 버튼으로 추가
   type($('q'), '개망초'); await sleep(150);
   click($('results').children[0]); await sleep(60);
-  t('두 번째 종 추가 → 2종', () => assert.strictEqual($('siteCount').textContent, '2종'));
+  t('두 번째 종 추가 → 2종', () => assert.ok($('siteCount').textContent.startsWith('2종'), $('siteCount').textContent));
+  t('나열줄에 두 종 모두 표시', () => {
+    const txt = $('siteNames').textContent;
+    assert.ok(txt.includes('소나무') && txt.includes('개망초'), txt);
+  });
 
   console.log('[초성·학명 검색]');
   type($('q'), 'ㅅㄱㄴㅁ'); await sleep(150);
@@ -136,7 +150,7 @@ async function main() {
 
   type($('q'), '억새'); await sleep(150);
   click($('results').children[0]); await sleep(60);
-  t('St.2에 기록 추가', () => assert.strictEqual($('siteCount').textContent, '1종'));
+  t('St.2에 기록 추가', () => assert.strictEqual($('siteCount').textContent, '1종 / 1개체'));
 
   console.log('[요약 집계]');
   click([...doc.querySelectorAll('#tabbar button')].find((b) => b.dataset.tab === 'sum'));

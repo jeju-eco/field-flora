@@ -35,24 +35,46 @@
       tx.oncomplete = res; tx.onerror = res; tx.onabort = res;
     });
   }
-  async function kvGet(k) {
-    const db = await idb();
-    if (db) {
-      const v = await new Promise((res) => {
-        const tx = db.transaction(STORE, 'readonly');
-        const rq = tx.objectStore(STORE).get(k);
-        rq.onsuccess = () => res(rq.result); rq.onerror = () => res(undefined);
-      });
-      if (v) return v;
-    }
+  function readLS() {
     try { const s = localStorage.getItem(LS_KEY); if (s) return JSON.parse(s); } catch (e) {}
     return undefined;
+  }
+  /** 상태의 '내용량' — 어느 저장소가 더 온전한지 비교하는 척도 */
+  function weigh(st) {
+    if (!st || !Array.isArray(st.surveys)) return -1;
+    let n = 0;
+    for (const s of st.surveys) n += (s.records ? s.records.length : 0) * 10 + (s.sites ? s.sites.length : 0);
+    return st.surveys.length + n;
+  }
+  async function kvGet(k) {
+    const ls = readLS();
+    let idbVal;
+    const db = await idb();
+    if (db) {
+      idbVal = await new Promise((res) => {
+        let done = false;
+        const finish = (v) => { if (!done) { done = true; res(v); } };
+        // IndexedDB 트랜잭션이 멈추는 기기가 있다 — 무한 대기하지 않는다
+        setTimeout(() => finish(undefined), 2500);
+        try {
+          const tx = db.transaction(STORE, 'readonly');
+          const rq = tx.objectStore(STORE).get(k);
+          rq.onsuccess = () => finish(rq.result);
+          rq.onerror = () => finish(undefined);
+          tx.onabort = tx.onerror = () => finish(undefined);
+        } catch (e) { finish(undefined); }
+      });
+    }
+    // 두 저장소 중 내용이 더 많은 쪽을 채택한다.
+    // (한쪽만 살아있거나 뒤처진 경우에 기록을 잃지 않기 위함)
+    return weigh(idbVal) >= weigh(ls) ? (idbVal || ls) : (ls || idbVal);
   }
 
   /* ───────── 상태 ───────── */
   let state = null;        // { surveys:[], currentId, recent:[] }
   let index = null;        // 종 사전 검색 인덱스
   let sheetCtx = null;     // 우점도 시트 대상
+  let flashId = null;      // 방금 추가/변경된 기록 — 잠깐 강조 표시
 
   function newSurvey(title) {
     const s = {
@@ -64,6 +86,9 @@
     return s;
   }
   const cur = () => state.surveys.find((s) => s.id === state.currentId);
+  /** 자동생성된 채 한 번도 안 쓴 조사인지 — 기록 0건이고 제목을 바꾸지 않았다 */
+  const isEmptySurvey = (s) =>
+    (!s.records || s.records.length === 0) && /^조사 \d{4}-\d{2}-\d{2}$/.test(s.title || '');
   const curSite = () => { const s = cur(); return s.sites.find((x) => x.id === s.currentSiteId) || s.sites[0]; };
 
   let saveTimer = null;
@@ -140,19 +165,40 @@
   function renderRecList() {
     const s = cur(); const site = curSite();
     const rows = s.records.filter((r) => r.siteId === site.id).slice().reverse();
-    $('siteCount').textContent = new Set(rows.map((r) => r.taxonId)).size + '종';
+    const nTaxa = new Set(rows.map((r) => r.taxonId)).size;
+    const nInd = rows.reduce((a, r) => a + (r.count || 1), 0);
+    $('siteCount').textContent = nTaxa ? `${nTaxa}종 / ${nInd}개체` : '0종';
+
+    // 이 지점에서 나온 종을 한 줄로 죽 보여준다 (현장에서 "뭐 나왔지?" 확인용)
+    const namesEl = $('siteNames');
+    if (namesEl) {
+      const uniq = [];
+      const seen = new Set();
+      for (const r of rows) if (!seen.has(r.taxonId)) { seen.add(r.taxonId); uniq.push(r.name); }
+      namesEl.textContent = uniq.join(', ');
+      namesEl.hidden = !uniq.length;
+    }
+
     const ul = $('recList'); ul.innerHTML = '';
     if (!rows.length) { ul.innerHTML = '<li class="empty" style="display:block">아직 기록이 없습니다. 위에서 종을 검색해 추가하세요.</li>'; return; }
     rows.forEach((r, i) => {
       const li = document.createElement('li');
+      if (r.id === flashId) li.className = 'flash';
+      const cnt = (r.count || 1) > 1 ? `<span class="ct">×${r.count}</span>` : '';
       li.innerHTML =
         `<span class="idx">${rows.length - i}</span>` +
-        `<div class="meta"><div class="nm">${esc(r.name)}</div><div class="sc">${esc(r.scientific)}</div></div>` +
+        `<div class="meta"><div class="nm">${esc(r.name)}${cnt}</div>` +
+        `<div class="sc">${esc(r.scientific)}${r.family ? ' · ' + esc(r.family) : ''}</div></div>` +
         `<button class="cv" type="button">${esc(r.cover || r.count || 1)}</button>`;
-      li.querySelector('.cv').onclick = () => openSheet(r);
+      li.querySelector('.cv').onclick = (ev) => { ev.stopPropagation(); openSheet(r); };
       li.onclick = () => openSheet(r);
       ul.appendChild(li);
     });
+    if (flashId) {
+      const el = ul.querySelector('.flash');
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+      setTimeout(() => { flashId = null; const f = ul.querySelector('.flash'); if (f) f.classList.remove('flash'); }, 1200);
+    }
   }
 
   function renderSites() {
@@ -178,6 +224,19 @@
     $('stFam').textContent = sum.families.length;
     $('sumSites').innerHTML = sum.bySite.map((b) =>
       `<li>${esc(b.site.name)}<b>${b.count}종</b></li>`).join('') || '<li class="empty">없음</li>';
+
+    // 전체 출현종을 과·국명 순으로 나열 (보고서 목록 확인용)
+    const namesEl = $('sumNames');
+    if (namesEl) {
+      const seen = new Map();
+      for (const r of s.records) if (!seen.has(r.taxonId)) seen.set(r.taxonId, r);
+      const list = [...seen.values()]
+        .sort((a, b) => (a.family || '').localeCompare(b.family || '', 'ko') || a.name.localeCompare(b.name, 'ko'))
+        .map((r) => r.name);
+      namesEl.textContent = list.join(', ');
+      namesEl.hidden = !list.length;
+    }
+
     $('sumFam').innerHTML = sum.families.slice(0, 40).map((f) =>
       `<li>${esc(f.name)}<b>${f.count}</b></li>`).join('') || '<li class="empty">없음</li>';
     $('fTitle').value = s.title; $('fDate').value = s.date; $('fSurveyor').value = s.surveyor || '';
@@ -189,20 +248,29 @@
   function addRecord(t) {
     const s = cur(); const site = curSite();
     const exist = s.records.find((r) => r.siteId === site.id && r.taxonId === t.i);
+    let addedId;
     if (exist) {
       exist.count = (exist.count || 1) + 1;
+      addedId = exist.id;
       toast(`${t.n} +1 (${exist.count})`);
     } else {
+      addedId = uid();
       s.records.push({
-        id: uid(), siteId: site.id, taxonId: t.i, name: t.n,
+        id: addedId, siteId: site.id, taxonId: t.i, name: t.n,
         scientific: t.s || '', family: t.f || '', count: 1, cover: '', note: '', at: Date.now(),
       });
-      toast(`${t.n} 추가`);
+      const n = new Set(s.records.filter((r) => r.siteId === site.id).map((r) => r.taxonId)).size;
+      toast(`${t.n} 추가 · ${site.name} ${n}종`);
     }
     state.recent = [t.i].concat((state.recent || []).filter((x) => x !== t.i)).slice(0, 30);
     buzz(15); save(true);   // 기록은 절대 유실되면 안 된다 — 즉시 저장
+    flashId = addedId;
     renderTop(); renderRecList(); renderRecent(); renderSummary();
-    if ($('q').value) renderResults(C.search(index, $('q').value, 25));
+    // 다음 종을 바로 칠 수 있게 검색창을 비우고 포커스를 유지한다
+    const q = $('q');
+    q.value = '';
+    renderResults([]);
+    q.focus();
   }
 
   function openSheet(rec) {
@@ -333,7 +401,24 @@
       state.surveys.slice().sort((a, b) => b.createdAt - a.createdAt).forEach((s) => {
         const n = new Set(s.records.map((r) => r.taxonId)).size;
         const li = document.createElement('li');
-        li.innerHTML = `<div class="meta"><div class="sname">${esc(s.title)}</div><div class="scoord">${esc(s.date)} · ${s.sites.length}지점</div></div><span class="sn">${n}종</span>`;
+        const isCur = s.id === state.currentId;
+        li.innerHTML =
+          `<div class="meta"><div class="sname">${isCur ? '● ' : ''}${esc(s.title)}</div>` +
+          `<div class="scoord">${esc(s.date)} · ${s.sites.length}지점 · 기록 ${s.records.length}건</div></div>` +
+          `<span class="sn">${n}종</span>` +
+          `<button class="del" type="button" aria-label="삭제">✕</button>`;
+        li.querySelector('.del').onclick = (ev) => {
+          ev.stopPropagation();
+          if (state.surveys.length <= 1) { toast('마지막 조사는 삭제할 수 없습니다'); return; }
+          const msg = s.records.length
+            ? `"${s.title}"에 기록 ${s.records.length}건이 있습니다. 정말 삭제할까요?`
+            : `"${s.title}"을(를) 삭제할까요?`;
+          if (!confirm(msg)) return;
+          state.surveys = state.surveys.filter((x) => x.id !== s.id);
+          if (state.currentId === s.id) state.currentId = state.surveys[0].id;
+          save(true); renderAll(); toast('조사 삭제됨');
+          $('surveyBtn').onclick();   // 목록 갱신
+        };
         li.onclick = () => { state.currentId = s.id; save(true); $('ssheet').hidden = true; renderAll(); };
         ul.appendChild(li);
       });
@@ -364,10 +449,11 @@
       if (e.key === 'Enter') {
         e.preventDefault();
         const first = $('results').querySelector('li');
-        if (first) first.click();
-        q.select();
+        if (first) first.click();   // addRecord가 검색창을 비우고 포커스를 유지한다
       }
     };
+    // 검색창을 다시 누르면 남은 글자를 통째로 선택해 바로 덮어쓸 수 있게 한다
+    q.onfocus = () => { if (q.value) q.select(); };
     $('qClear').onclick = () => { q.value = ''; renderResults([]); q.focus(); };
 
     $('addSite').onclick = addSite;
@@ -421,6 +507,15 @@
       state = { surveys: [], currentId: null, recent: [] };
       const s = newSurvey(null);
       state.surveys.push(s); state.currentId = s.id;
+      save(true);
+    }
+    // 기록이 하나도 없는 자동생성 조사가 여러 개 쌓이면 하나만 남긴다.
+    // (IndexedDB가 늦게 열리던 시절 실행할 때마다 빈 조사가 생기던 흔적 정리)
+    const empties = state.surveys.filter(isEmptySurvey);
+    if (empties.length > 1) {
+      const keep = state.surveys.find((s) => s.id === state.currentId && isEmptySurvey(s)) || empties[empties.length - 1];
+      state.surveys = state.surveys.filter((s) => !isEmptySurvey(s) || s.id === keep.id);
+      if (!state.surveys.some((s) => s.id === state.currentId)) state.currentId = keep.id;
       save(true);
     }
     if (!cur()) state.currentId = state.surveys[0].id;
