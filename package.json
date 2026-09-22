@@ -1,16 +1,17 @@
 {
-  "name": "field_flora",
+  "name": "field-flora",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "directories": {
-    "test": "tests"
-  },
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
+  "description": "현장 식물상 빠른입력기 — 오프라인 PWA",
+  "private": true,
   "type": "commonjs",
+  "scripts": {
+    "test": "node tests/core.test.js && node tests/ui.test.js",
+    "dict": "python tools/build_dict.py",
+    "icons": "python tools/make_icons.py",
+    "sample": "node tools/sample_export.js",
+    "serve": "python -m http.server 8777 --directory web"
+  },
+  "license": "MIT",
   "devDependencies": {
     "jsdom": "^30.1.1"
   }
