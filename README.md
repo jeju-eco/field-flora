@@ -115,7 +115,7 @@ python tools/build_dict.py [DB경로]
 # 아이콘 재생성
 python tools/make_icons.py
 
-# 전체 테스트 (165개)
+# 전체 테스트 (206개)
 npm test
 
 # 로컬 실행
@@ -132,6 +132,7 @@ npm run serve      # http://localhost:8777
 | `storage.test.js` | 11 | IndexedDB 실패 시 복원, 빈 조사 정리 |
 | `more.test.js` | 4 | 검색 결과 더보기 페이징 |
 | `field.test.js` | 48 | 현장 시나리오 — 방형구·훼손수목·음성·내보내기 |
+| `import.test.js` | 41 | 엑셀 왕복 — CSV 파싱·되돌리기·미확인종 보존 |
 
 ### 구조
 
