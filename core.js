@@ -351,8 +351,9 @@
 
     rows.slice(hi + 1).forEach((r) => {
       const name = get(r, '수종');
-      // 합계·소계 행은 건너뛴다
-      if (!name || name === '합계' || byLabel[name] !== undefined && !get(r, '흉고직경')) { skipped++; return; }
+      // 합계·조치별 소계 행은 건너뛴다 (소계는 조치명이 수종 자리에 오고 규격이 비어 있다)
+      const isTotal = name === '합계' || (byLabel[name] !== undefined && !get(r, '흉고직경'));
+      if (!name || isTotal) { skipped++; return; }
       const hit = lookup ? lookup(name) : null;
       if (!hit) unknown.push(name);
       const num = (k) => { const v = get(r, k); return v === '' ? '' : (Number(v) || ''); };

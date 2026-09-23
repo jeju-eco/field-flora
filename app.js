@@ -977,7 +977,7 @@
     return hits.find((h) => C.norm(h.n) === key) || hits.find((h) => C.norm(h.matched || '') === key) || null;
   }
 
-  function importText(text, filename) {
+  function importText(text) {
     const t = String(text || '').replace(/^\ufeff/, '').trim();
     if (!t) { toast('빈 파일입니다'); return; }
 
@@ -1086,7 +1086,7 @@
     $('fileInput').onchange = (e) => {
       const f = e.target.files[0]; if (!f) return;
       const rd = new FileReader();
-      rd.onload = () => importText(String(rd.result), f.name);
+      rd.onload = () => importText(String(rd.result));
       rd.readAsText(f, 'utf-8');
       e.target.value = '';
     };
