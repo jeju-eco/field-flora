@@ -232,6 +232,147 @@
     return lines.join('\r\n');
   }
 
+  /* ── CSV 읽기 (엑셀에서 고쳐 온 파일을 되돌려 받는다) ── */
+
+  /** RFC4180 CSV 파서. 따옴표 안의 쉼표·줄바꿈·"" 이스케이프를 지킨다. */
+  function parseCSV(text) {
+    const s = String(text || '').replace(/^\ufeff/, '');
+    const rows = [];
+    let row = [], cell = '', q = false, i = 0;
+    while (i < s.length) {
+      const c = s[i];
+      if (q) {
+        if (c === '"') {
+          if (s[i + 1] === '"') { cell += '"'; i += 2; continue; }
+          q = false; i++; continue;
+        }
+        cell += c; i++; continue;
+      }
+      if (c === '"') { q = true; i++; continue; }
+      if (c === ',') { row.push(cell); cell = ''; i++; continue; }
+      if (c === '\r') { i++; continue; }
+      if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; i++; continue; }
+      cell += c; i++;
+    }
+    if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+    return rows.filter((r) => r.some((x) => String(x).trim() !== ''));
+  }
+
+  /** 헤더 행을 열이름→번호 맵으로. 공백·괄호 단위를 무시해 느슨하게 맞춘다. */
+  function headerMap(head) {
+    const norm = (x) => String(x || '').replace(/\s|\(.*?\)/g, '').trim();
+    const m = {};
+    head.forEach((h, i) => { const k = norm(h); if (k && !(k in m)) m[k] = i; });
+    return m;
+  }
+
+  /**
+   * 기록 CSV(또는 국명만 있는 종 목록)를 읽어 기록 배열로 바꾼다.
+   * lookup(name) → 사전의 종 객체({i,n,s,f}) 또는 null.
+   * 사전에 없는 이름도 버리지 않고 taxonId=null로 살려 둔다(직접 입력한 종).
+   */
+  function parseRecordsCSV(text, lookup, opts) {
+    const o = opts || {};
+    const rows = parseCSV(text);
+    if (!rows.length) return { records: [], sites: [], unknown: [], skipped: 0 };
+
+    const H = headerMap(rows[0]);
+    const iName = H['국명'] != null ? H['국명'] : (H['종명'] != null ? H['종명'] : (H['식물명'] != null ? H['식물명'] : 0));
+    const hasHeader = H['국명'] != null || H['종명'] != null || H['식물명'] != null;
+    const body = hasHeader ? rows.slice(1) : rows;
+
+    const get = (r, key) => (H[key] != null && r[H[key]] != null ? String(r[H[key]]).trim() : '');
+    const sites = [];
+    const siteByName = new Map();
+    const ensureSite = (name, lat, lon, alt) => {
+      const n = name || o.defaultSite || 'St.1';
+      if (siteByName.has(n)) return siteByName.get(n);
+      const site = {
+        id: o.uid ? o.uid() : 'S' + (sites.length + 1),
+        name: n,
+        lat: lat === '' ? null : Number(lat),
+        lon: lon === '' ? null : Number(lon),
+        alt: alt === '' ? null : Number(alt),
+        acc: null, at: Date.now(),
+      };
+      if (isNaN(site.lat)) site.lat = null;
+      if (isNaN(site.lon)) site.lon = null;
+      if (isNaN(site.alt)) site.alt = null;
+      sites.push(site); siteByName.set(n, site);
+      return site;
+    };
+
+    const records = [];
+    const unknown = [];
+    let skipped = 0;
+
+    body.forEach((r) => {
+      const name = String(r[iName] || '').trim();
+      if (!name) { skipped++; return; }
+      const site = ensureSite(get(r, '지점'), get(r, '위도'), get(r, '경도'), get(r, '고도'));
+      const hit = lookup ? lookup(name) : null;
+      if (!hit) unknown.push(name);
+
+      const cnt = get(r, '개체수');
+      records.push({
+        id: o.uid ? o.uid() : 'R' + (records.length + 1),
+        siteId: site.id,
+        taxonId: hit ? hit.i : null,
+        name: hit ? hit.n : name,
+        scientific: hit ? (hit.s || '') : get(r, '학명'),
+        family: hit ? (hit.f || '') : get(r, '과'),
+        count: cnt === '' ? 1 : Math.max(0, Number(cnt) || 0),
+        cover: get(r, '우점도'),
+        note: get(r, '비고'),
+        at: Date.now(),
+      });
+    });
+
+    return { records, sites, unknown, skipped };
+  }
+
+
+  /** 훼손수목 조서 CSV를 읽어 수목 배열로. 엑셀에서 규격을 정리해 온 경우. */
+  function parseTreeCSV(text, lookup, opts) {
+    const o = opts || {};
+    const rows = parseCSV(text);
+    // 조서는 머리말 몇 줄 뒤에 표 헤더가 온다. '수종'이 있는 줄을 헤더로 본다.
+    const hi = rows.findIndex((r) => r.some((c) => String(c).replace(/\s/g, '') === '수종'));
+    if (hi < 0) return { trees: [], unknown: [], skipped: 0 };
+
+    const H = headerMap(rows[hi]);
+    const get = (r, key) => (H[key] != null && r[H[key]] != null ? String(r[H[key]]).trim() : '');
+    const byLabel = {};
+    TREE_ACTIONS.forEach((a) => { byLabel[a.label] = a.v; });
+
+    const trees = [];
+    const unknown = [];
+    let skipped = 0;
+
+    rows.slice(hi + 1).forEach((r) => {
+      const name = get(r, '수종');
+      // 합계·소계 행은 건너뛴다
+      if (!name || name === '합계' || byLabel[name] !== undefined && !get(r, '흉고직경')) { skipped++; return; }
+      const hit = lookup ? lookup(name) : null;
+      if (!hit) unknown.push(name);
+      const num = (k) => { const v = get(r, k); return v === '' ? '' : (Number(v) || ''); };
+      trees.push({
+        id: o.uid ? o.uid() : 'T' + (trees.length + 1),
+        taxonId: hit ? hit.i : null,
+        name: hit ? hit.n : name,
+        scientific: hit ? (hit.s || '') : get(r, '학명'),
+        family: hit ? (hit.f || '') : get(r, '과'),
+        dbh: num('흉고직경'), height: num('수고'), crown: num('수관폭'),
+        stems: Math.max(1, Number(get(r, '본수')) || 1),
+        action: byLabel[get(r, '조치')] || 'move',
+        lat: get(r, '위도') === '' ? null : Number(get(r, '위도')) || null,
+        lng: get(r, '경도') === '' ? null : Number(get(r, '경도')) || null,
+        note: get(r, '비고'), at: Date.now(),
+      });
+    });
+    return { trees, unknown, skipped };
+  }
+
   /** 지점 x 종 출현 매트릭스 CSV (조사표 서식) */
   function toMatrixCSV(survey) {
     const sites = survey.sites || [];
@@ -339,5 +480,6 @@
     COVER, toDMS, summarize, toRecordsCSV, toMatrixCSV, fileStamp, csvCell,
     LAYERS, LAYER_LABEL, PLOT_SIZES, TREE_ACTIONS, TREE_ACTION_LABEL,
     dbhClass, treeSpec, summarizeTrees, toVegCSV, toTreeCSV,
+    parseCSV, parseRecordsCSV, parseTreeCSV,
   };
 });

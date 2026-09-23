@@ -107,12 +107,18 @@
       <label class="field"><span>조사일</span><input id="fDate" type="date"></label>
       <label class="field"><span>조사자</span><input id="fSurveyor" type="text" placeholder="이름"></label>
 
+      <h3 class="section-h">불러오기 <span class="hint">엑셀에서 고친 파일도 됩니다</span></h3>
+      <div class="btnrow">
+        <button id="importFile" class="primary" type="button">파일 불러오기 (CSV·JSON)</button>
+      </div>
+      <p class="hint">내보낸 <b>기록 CSV</b>나 <b>훼손수목 조서</b>를 엑셀에서 고쳐 그대로 올리면 됩니다.
+        국명만 한 줄씩 적은 목록도 됩니다. 사전에 없는 이름도 버리지 않고 그대로 들어갑니다.</p>
+
       <h3 class="section-h">관리</h3>
       <div class="btnrow">
         <button id="newSurvey" class="ghost" type="button">새 조사 시작</button>
-        <button id="importJson" class="ghost" type="button">백업 불러오기</button>
       </div>
-      <input id="fileInput" type="file" accept="application/json" hidden>
+      <input id="fileInput" type="file" accept=".csv,.json,text/csv,application/json" hidden>
       <p class="hint" id="dictInfo">사전 로딩 중…</p>
     </div>
   </section>

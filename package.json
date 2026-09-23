@@ -5,7 +5,7 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "test": "node tests/core.test.js && node tests/ui.test.js && node tests/css.test.js && node tests/storage.test.js && node tests/more.test.js && node tests/field.test.js",
+    "test": "node tests/core.test.js && node tests/ui.test.js && node tests/css.test.js && node tests/storage.test.js && node tests/more.test.js && node tests/field.test.js && node tests/import.test.js",
     "dict": "python tools/build_dict.py",
     "icons": "python tools/make_icons.py",
     "sample": "node tools/sample_export.js",

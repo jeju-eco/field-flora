@@ -717,7 +717,9 @@
 
   /* ───────── 내보내기 ───────── */
   function download(name, text, mime) {
-    const blob = new Blob(['\ufeff' + text], { type: (mime || 'text/csv') + ';charset=utf-8' });
+    // BOM이 없을 때만 붙인다. 두 번 붙으면 엑셀 첫 셀에 깨진 문자가 들어간다.
+    const body = String(text).charCodeAt(0) === 0xFEFF ? String(text) : '\ufeff' + text;
+    const blob = new Blob([body], { type: (mime || 'text/csv') + ';charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = name;
     document.body.appendChild(a); a.click();
@@ -963,6 +965,84 @@
     };
   }
 
+  /* ───────── 불러오기 ─────────
+   * 백업 JSON뿐 아니라 엑셀에서 고쳐 온 CSV도 받는다.
+   * 사전에 없는 이름도 버리지 않는다 — 현장에서 적은 종을 임의로 삭제하면 안 된다. */
+
+  /** 국명으로 사전을 찾는다. 공백·괄호를 무시해 느슨하게 맞춘다. */
+  function lookupByName(name) {
+    if (!index) return null;
+    const hits = C.search(index, name, 5);
+    const key = C.norm(name);
+    return hits.find((h) => C.norm(h.n) === key) || hits.find((h) => C.norm(h.matched || '') === key) || null;
+  }
+
+  function importText(text, filename) {
+    const t = String(text || '').replace(/^\ufeff/, '').trim();
+    if (!t) { toast('빈 파일입니다'); return; }
+
+    // JSON 백업
+    if (t[0] === '{' || t[0] === '[') {
+      try {
+        const data = JSON.parse(t);
+        const list = data.surveys || (data.records ? [data] : null);
+        if (!list) throw new Error('형식 불일치');
+        const ids = new Set(state.surveys.map((s) => s.id));
+        let added = 0;
+        list.forEach((s) => { if (!ids.has(s.id)) { state.surveys.push(s); added++; } });
+        migrate(state); save(true); renderAll();
+        toast(`조사 ${added}건 불러옴`);
+      } catch (err) { toast('불러오기 실패: ' + err.message); }
+      return;
+    }
+
+    // 훼손수목 조서인지 먼저 본다
+    if (/훼손수목|수종/.test(t.split('\n').slice(0, 8).join('\n'))) {
+      const r = C.parseTreeCSV(t, lookupByName, { uid });
+      if (r.trees.length) {
+        const s = cur();
+        if (s.trees.length && !confirm(`수목 ${r.trees.length}건을 불러옵니다.\n기존 ${s.trees.length}건을 대체할까요?\n(취소를 누르면 뒤에 덧붙입니다)`)) {
+          s.trees = s.trees.concat(r.trees);
+        } else {
+          s.trees = r.trees;
+        }
+        save(true); renderAll(); goTab('tree');
+        reportImport(`수목 ${r.trees.length}건`, r.unknown);
+        return;
+      }
+    }
+
+    // 기록 CSV / 종 목록
+    const r = C.parseRecordsCSV(t, lookupByName, { uid, defaultSite: 'St.1' });
+    if (!r.records.length) { toast('읽을 수 있는 행이 없습니다'); return; }
+
+    const s = cur();
+    const replace = !s.records.length ||
+      confirm(`종 ${r.records.length}건을 불러옵니다.\n기존 기록 ${s.records.length}건을 대체할까요?\n(취소를 누르면 현재 지점에 덧붙입니다)`);
+
+    if (replace) {
+      s.sites = r.sites;
+      s.records = r.records;
+      s.currentSiteId = r.sites[0] ? r.sites[0].id : null;
+    } else {
+      // 덧붙이기: 전부 현재 지점으로 모은다
+      const site = curSite();
+      r.records.forEach((rec) => { rec.siteId = site.id; });
+      s.records = s.records.concat(r.records);
+    }
+    save(true); renderAll(); goTab('rec');
+    reportImport(`${r.records.length}건`, r.unknown);
+  }
+
+  /** 불러온 결과를 알린다. 사전에 없던 이름은 반드시 사용자에게 보여준다. */
+  function reportImport(what, unknown) {
+    buzz(25);
+    if (!unknown || !unknown.length) { toast(`${what} 불러옴`); return; }
+    const uniq = [...new Set(unknown)];
+    const head = uniq.slice(0, 5).join(', ');
+    toast(`${what} 불러옴 · 사전에 없는 ${uniq.length}종: ${head}${uniq.length > 5 ? ' 외' : ''}`);
+  }
+
   function bindRest() {
     const q = $('q');
     let tmr = null;
@@ -1002,24 +1082,12 @@
     $('shareRec').onclick = shareCSV;
     $('expJson').onclick = () => download(C.fileStamp(cur()) + '_백업.json', JSON.stringify(state, null, 1), 'application/json');
     $('newSurvey').onclick = doNewSurvey;
-    $('importJson').onclick = () => $('fileInput').click();
+    $('importFile').onclick = () => $('fileInput').click();
     $('fileInput').onchange = (e) => {
       const f = e.target.files[0]; if (!f) return;
       const rd = new FileReader();
-      rd.onload = () => {
-        try {
-          const data = JSON.parse(rd.result);
-          const list = data.surveys || (data.records ? [data] : null);
-          if (!list) throw new Error('형식 불일치');
-          const ids = new Set(state.surveys.map((s) => s.id));
-          let added = 0;
-          list.forEach((s) => { if (!ids.has(s.id)) { state.surveys.push(s); added++; } });
-          migrate(state);
-          save(true); renderAll();
-          toast(`조사 ${added}건 불러옴`);
-        } catch (err) { toast('불러오기 실패: ' + err.message); }
-      };
-      rd.readAsText(f);
+      rd.onload = () => importText(String(rd.result), f.name);
+      rd.readAsText(f, 'utf-8');
       e.target.value = '';
     };
 
