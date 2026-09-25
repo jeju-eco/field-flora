@@ -109,8 +109,18 @@ async function main() {
   });
   click($('results').children[0]); await sleep(60);
   t('재탭하면 기록이 취소됨', () => assert.strictEqual($('siteCount').textContent, '0종'));
-  t('취소 안내 표시', () =>
-    assert.ok($('toast').textContent.includes('취소됨'), $('toast').textContent));
+  t('삭제 안내와 되돌리기 버튼 표시', () => {
+    assert.ok($('toast').textContent.includes('소나무 삭제'), $('toast').textContent);
+    assert.ok($('toast').querySelector('.undo'), '되돌리기 버튼 없음');
+  });
+  t('삭제한 종을 되돌릴 수 있음', () => {
+    click($('toast').querySelector('.undo'));
+    assert.strictEqual($('siteCount').textContent, '1종 / 1개체', $('siteCount').textContent);
+    assert.ok($('recList').textContent.includes('소나무'));
+  });
+  // 되돌린 뒤 다시 지워 이후 테스트의 전제를 맞춘다
+  type($('q'), '소나무'); await sleep(150);
+  click($('results').children[0]); await sleep(60);
   t('목록에서 사라짐', () => assert.ok(!$('recList').textContent.includes('소나무')));
   // 다시 넣어 이후 테스트를 잇는다
   type($('q'), '소나무'); await sleep(150);
@@ -142,7 +152,7 @@ async function main() {
     t('취소하면 2종으로 복귀', () => assert.ok($('siteCount').textContent.startsWith('2종'), $('siteCount').textContent));
     t('취소된 종이 목록에서 사라짐', () => assert.ok(!$('recList').textContent.includes('곰솔')));
     t('취소된 종이 나열줄에서도 사라짐', () => assert.ok(!$('siteNames').textContent.includes('곰솔')));
-    t('취소 토스트 표시', () => assert.ok($('toast').textContent.includes('취소됨'), $('toast').textContent));
+    t('되돌림 안내 표시', () => assert.ok($('toast').textContent.includes('되돌림'), $('toast').textContent));
   }
   t('취소 버튼은 한 번만 동작(연타해도 다른 기록 안 지움)', () => {
     const n = $('recList').querySelectorAll('li').length;

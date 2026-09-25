@@ -49,7 +49,7 @@ main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:16px
   margin:16px 12px 8px;font-size:13px;color:var(--dim);font-weight:700;
   display:flex;align-items:center;gap:8px;
 }
-.hint{font-size:12px;color:var(--dim);font-weight:400;line-height:1.5}
+.hint{font-size:13px;color:var(--dim);font-weight:400;line-height:1.5}
 .count{margin-left:auto;color:var(--accent);font-weight:700}
 
 /* 이 지점에서 나온 종 이름 나열 — 현장에서 즉시 확인 */
@@ -115,7 +115,7 @@ main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:16px
 @keyframes flashin{0%{background:var(--accent);color:#04120a}100%{background:var(--card)}}
 .reclist li.flash{animation:flashin 1.2s ease-out;border-color:var(--accent)}
 .reclist .cv{
-  margin-left:auto;min-width:44px;height:38px;border-radius:10px;background:var(--accent-d);
+  margin-left:auto;min-width:52px;height:48px;border-radius:10px;background:var(--accent-d);
   color:var(--fg);font-weight:700;display:flex;align-items:center;justify-content:center;flex:0 0 auto;
 }
 .sumlist li{display:flex;padding:9px 12px;border-bottom:1px solid var(--line)}
@@ -123,9 +123,9 @@ main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:16px
 
 /* ── 지점 ── */
 .sitelist .sname{font-weight:700}
-.sitelist .scoord{font-size:11px;color:var(--dim)}
+.sitelist .scoord{font-size:13px;color:var(--dim);font-variant-numeric:tabular-nums}
 .sitelist .sn{margin-left:auto;color:var(--accent);font-weight:700;font-size:13px}
-.sitelist .del{width:40px;height:40px;border-radius:10px;color:var(--dim);font-size:16px;flex:0 0 auto;margin-left:6px;border:1px solid var(--line)}
+.sitelist .del{width:46px;height:46px;border-radius:10px;color:var(--dim);font-size:16px;flex:0 0 auto;margin-left:6px;border:1px solid var(--line)}
 .sitelist .del:active{background:var(--danger);color:#fff}
 
 /* ── 버튼/필드 ── */
@@ -282,3 +282,49 @@ button.big{width:100%;font-size:17px}
 .chiprow button{min-height:46px;padding:0 15px;border-radius:10px;font-size:14px;font-weight:600;
   background:var(--bg);border:1px solid var(--line);color:var(--fg)}
 .chiprow button.on{background:var(--accent);color:#04120a;border-color:var(--accent);font-weight:800}
+
+/* 지점 편집 시트 */
+.gscoord{margin:10px 0 4px;font-size:14px;color:var(--dim);font-variant-numeric:tabular-nums}
+.ghost.danger{color:var(--danger);border-color:var(--danger)}
+.ghost.danger:active{background:var(--danger);color:#fff}
+.ghost:disabled{opacity:.35;pointer-events:none}
+
+/* 좌표 없는 지점은 눈에 띄게 — 나중에 어느 지점인지 못 찾는 사고 방지 */
+.scoord.warn{color:var(--danger);font-weight:600}
+
+/* ══════════ 햇빛 모드 ══════════
+   땡볕 아래 야외에서는 어두운 화면이 거의 안 보인다.
+   흰 배경 + 검은 글씨 + 굵은 테두리로 바꾼다. 토글은 요약 탭에 있다. */
+body.sun{
+  --bg:#ffffff; --card:#ffffff; --line:#5b6b62; --fg:#000000; --dim:#3d4a43;
+  --accent:#0a6b33; --accent-d:#d6f0e0; --danger:#c62828; --warn:#a35b00;
+}
+body.sun #topbar{background:#0a6b33}
+body.sun .site-tab{background:rgba(255,255,255,.25);color:#e9fff2}
+body.sun .site-tab.on{background:#fff;color:#0a6b33}
+body.sun .chip{background:rgba(255,255,255,.2);color:#fff}
+body.sun #tabbar{background:#fff;border-top:2px solid var(--line)}
+body.sun #tabbar button{color:#3d4a43}
+body.sun #tabbar button.on{color:#0a6b33}
+body.sun .reclist li,body.sun .sitelist li,body.sun .results li{border-width:2px}
+body.sun .reclist .cv{background:#0a6b33;color:#fff}
+body.sun .reclist .cv.unset{background:#fff;color:#3d4a43;border:2px dashed var(--line)}
+body.sun button.primary{background:#0a6b33;color:#fff}
+body.sun .quickgrid button{border-width:2px}
+body.sun .quickgrid button.on{background:#d6f0e0;border-color:#0a6b33;color:#0a6b33}
+body.sun .toast{background:#000;color:#fff}
+
+/* 밝기 토글 버튼 */
+.sunbtn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+  min-height:var(--tap);border-radius:12px;border:2px solid var(--line);
+  background:var(--card);color:var(--fg);font-weight:700;font-size:16px}
+
+/* 플로팅 검색 버튼 — 목록을 내려본 뒤 엄지로 바로 검색창 복귀 */
+.fab{
+  position:fixed;right:14px;bottom:calc(72px + env(safe-area-inset-bottom));
+  z-index:40;min-height:52px;padding:0 20px;border-radius:26px;
+  background:var(--accent);color:#04120a;font-weight:800;font-size:16px;
+  box-shadow:0 4px 16px rgba(0,0,0,.45);border:0;
+}
+.fab:active{transform:scale(.95)}
+body.sun .fab{background:#0a6b33;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.3)}

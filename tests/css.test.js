@@ -56,16 +56,16 @@ for (const id of ['sheet', 'ssheet', 'toast']) {
 }
 
 console.log('[hidden 해제 시 정상 표시]');
-t('#sheet: hidden 제거하면 flex로 표시', () => {
-  const el = doc.getElementById('sheet');
-  el.removeAttribute('hidden');
-  assert.strictEqual(disp(el), 'flex', '시트가 열려야 하는데 display:' + disp(el));
-});
-t('#ssheet: hidden 제거하면 flex로 표시', () => {
-  const el = doc.getElementById('ssheet');
-  el.removeAttribute('hidden');
-  assert.strictEqual(disp(el), 'flex');
-});
+// 주의: 검사 후 hidden을 되돌린다. 안 그러면 뒤따르는 테스트가 열린 시트를 보게 된다.
+for (const id of ['sheet', 'ssheet']) {
+  t(`#${id}: hidden 제거하면 flex로 표시`, () => {
+    const el = doc.getElementById(id);
+    el.removeAttribute('hidden');
+    const d = disp(el);
+    el.setAttribute('hidden', '');
+    assert.strictEqual(d, 'flex', '시트가 열려야 하는데 display:' + d);
+  });
+}
 
 console.log('[전면 오버레이가 기본 상태에서 화면을 막지 않는가]');
 t('기본 상태에서 position:fixed 전면 오버레이 없음', () => {
@@ -84,6 +84,21 @@ t('탭 타겟 최소 크기 변수 44px 이상 (iOS 권장)', () => {
   const v = window.getComputedStyle(doc.documentElement).getPropertyValue('--tap').trim();
   const px = parseInt(v, 10);
   assert.ok(px >= 44, '--tap=' + v);
+});
+
+console.log('[시트 숨김]');
+t('모든 시트가 초기에 숨겨져 있다', () => {
+  const open = [...doc.querySelectorAll('.sheet')]
+    .filter((el) => window.getComputedStyle(el).display !== 'none')
+    .map((el) => el.id);
+  assert.deepStrictEqual(open, [], '열린 채로 시작하는 시트: ' + open.join(', '));
+});
+t('지점 편집 시트에 필요한 요소가 모두 있다', () => {
+  ['gsheet', 'gsName', 'gsPresets', 'gsCoord', 'gsLocate', 'gsDel', 'gsOk']
+    .forEach((id) => assert.ok(doc.getElementById(id), '#' + id + ' 없음'));
+});
+t('삭제 버튼 색이 위험색으로 구분된다', () => {
+  assert.ok(/\.ghost\.danger\s*\{[^}]*--danger/.test(css), '.ghost.danger 규칙 없음');
 });
 
 console.log(`\n결과: ${pass} passed, ${fail} failed`);

@@ -75,7 +75,7 @@
   let index = null;        // 종 사전 검색 인덱스
   let sheetCtx = null;     // 우점도 시트 대상
   let flashId = null;      // 방금 추가/변경된 기록 — 잠깐 강조 표시
-  let lastAdded = null;    // 직전에 추가한 기록 — 취소(undo) 대상
+  let undoAction = null;   // 한 단계 되돌리기 — { label, apply }. apply()가 원상복구한다
 
   function newSurvey(title) {
     const s = {
@@ -91,6 +91,8 @@
     (st.surveys || []).forEach((s) => {
       if (!Array.isArray(s.plots)) s.plots = [];
       if (!Array.isArray(s.trees)) s.trees = [];
+      // 측정 중에 앱이 꺼지면 'measuring' 상태로 굳는다. 부팅 때 푼다.
+      (s.sites || []).forEach((x) => { delete x.locating; });
     });
     return st;
   }
@@ -132,22 +134,33 @@
     clearTimeout(el._t);
     el._t = setTimeout(() => { el.hidden = true; }, 1800);
   }
-  /** 취소 버튼이 달린 토스트 — 잘못 누른 기록을 바로 되돌린다 */
-  function showUndo(msg) {
+  /**
+   * 되돌릴 방법을 등록하고 [취소] 버튼이 달린 토스트를 띄운다.
+   * 현장에서 장갑 낀 손으로 잘못 누른 추가·삭제를 한 단계 되돌린다.
+   * apply()는 원상복구를 수행한다. 4초 안에 안 누르면 확정된다.
+   */
+  function pushUndo(label, apply) {
+    undoAction = { label, apply };
     const el = $('toast');
     el.innerHTML = '';
     el.classList.add('withbtn');
     const span = document.createElement('span');
-    span.textContent = msg;
+    span.textContent = label;
     const btn = document.createElement('button');
     btn.type = 'button'; btn.className = 'undo'; btn.textContent = '취소';
     btn.onclick = (ev) => { ev.stopPropagation(); clearTimeout(el._t); el.hidden = true; undoLast(); };
     el.appendChild(span); el.appendChild(btn);
     el.hidden = false;
     clearTimeout(el._t);
-    el._t = setTimeout(() => { el.hidden = true; lastAdded = null; }, 4000);
+    el._t = setTimeout(() => { el.hidden = true; undoAction = null; }, 4000);
   }
   function buzz(ms) { if (navigator.vibrate) navigator.vibrate(ms || 12); }
+  /** 화면 맨 위로. jsdom 등 scrollTo 미구현 환경에서는 조용히 넘어간다. */
+  function scrollTop(smooth) {
+    if (typeof window.scrollTo !== 'function') return;
+    if (window.navigator.userAgent.includes('jsdom')) return;
+    try { window.scrollTo(smooth ? { top: 0, behavior: 'smooth' } : 0, 0); } catch (e) {}
+  }
 
   /* ───────── 음성 입력 ─────────
    * 장갑을 낀 채로는 타이핑이 어렵다. 말로 종명을 넣는다.
@@ -311,7 +324,12 @@
       b.type = 'button';
       b.textContent = have.has(t.i) ? '✓ ' + t.n : t.n;
       if (have.has(t.i)) b.className = 'on';
-      b.onclick = () => addRecord(t);
+      // 빠른 입력용 버튼이므로 이미 넣은 종을 다시 눌러도 지우지 않는다.
+      // (검색 결과에서는 토글이 맞지만, 여기서는 연타하다 기록을 날리기 쉽다)
+      b.onclick = () => {
+        if (have.has(t.i)) { toast(`${t.n}은 이미 기록됨`); buzz(8); return; }
+        addRecord(t);
+      };
       wrap.appendChild(b);
     });
   }
@@ -360,10 +378,12 @@
     s.sites.forEach((site) => {
       const n = new Set(s.records.filter((r) => r.siteId === site.id).map((r) => r.taxonId)).size;
       const li = document.createElement('li');
-      const coord = site.lat != null
-        ? `${C.toDMS(site.lat, true)}  ${C.toDMS(site.lon, false)}${site.alt != null ? '  ' + Math.round(site.alt) + 'm' : ''}`
-        : '좌표 없음 (탭하여 재측정)';
-      li.innerHTML = `<div class="meta"><div class="sname">${esc(site.name)}</div><div class="scoord">${esc(coord)}</div></div><span class="sn">${n}종</span>`;
+      const coord = site.locating
+        ? '측정중…'
+        : site.lat != null
+          ? `${C.toDMS(site.lat, true)}  ${C.toDMS(site.lon, false)}${site.alt != null ? '  ' + Math.round(site.alt) + 'm' : ''}`
+          : '⚠ 좌표 없음 (탭하여 재측정)';
+      li.innerHTML = `<div class="meta"><div class="sname">${esc(site.name)}</div><div class="scoord${site.lat == null && !site.locating ? ' warn' : ''}">${esc(coord)}</div></div><span class="sn">${n}종</span>`;
       li.onclick = () => editSite(site);
       ul.appendChild(li);
     });
@@ -430,11 +450,11 @@
       // 개체수·우점도·비고를 입력해둔 기록은 실수로 날리지 않도록 확인한다
       const hasData = (exist.count || 1) > 1 || exist.cover || exist.note;
       if (hasData && !confirm(`${t.n}에 입력한 내용이 있습니다. 기록을 삭제할까요?`)) { clearSearch(); return; }
+      const idx = s.records.indexOf(exist);
       s.records = s.records.filter((r) => r.id !== exist.id);
-      lastAdded = null;
+      pushUndo(`${t.n} 삭제`, () => s.records.splice(Math.min(idx, s.records.length), 0, exist));
       buzz(20); save(true);
       renderAll();
-      toast(`${t.n} 취소됨`);
       clearSearch();
       return;
     }
@@ -445,8 +465,9 @@
       scientific: t.s || '', family: t.f || '', count: 1, cover: '', note: '', at: Date.now(),
     });
     const n = new Set(s.records.filter((r) => r.siteId === site.id).map((r) => r.taxonId)).size;
-    lastAdded = { id: addedId, name: t.n, siteId: site.id };
-    showUndo(`${t.n} 추가 · ${site.name} ${n}종`);
+    pushUndo(`${t.n} 추가 · ${site.name} ${n}종`, () => {
+      s.records = s.records.filter((r) => r.id !== addedId);
+    });
 
     state.recent = [t.i].concat((state.recent || []).filter((x) => x !== t.i)).slice(0, 30);
     buzz(15); save(true);   // 기록은 절대 유실되면 안 된다 — 즉시 저장
@@ -455,17 +476,18 @@
     clearSearch();          // 다음 종을 바로 칠 수 있게
   }
 
-  /** 방금 추가한 기록을 되돌린다 (잘못 누른 경우) */
+  /* ───────── 되돌리기 ─────────
+   * 현장에서 장갑 낀 손으로 삭제를 잘못 누르면 자료가 그대로 날아간다.
+   * 추가·삭제 모두 한 단계 되돌릴 수 있게 한다. 등록은 pushUndo() 참조. */
+
+  /** 등록된 되돌리기를 실행한다 */
   function undoLast() {
-    if (!lastAdded) return;
-    const s = cur();
-    const before = s.records.length;
-    s.records = s.records.filter((r) => r.id !== lastAdded.id);
-    if (s.records.length === before) { lastAdded = null; return; }
-    const nm = lastAdded.name;
-    lastAdded = null;
+    if (!undoAction) return;
+    const { label, apply } = undoAction;
+    undoAction = null;
+    apply();
     save(true); renderAll();
-    toast(`${nm} 취소됨`);
+    toast(`${label} 되돌림`);
     buzz(20);
   }
 
@@ -556,8 +578,10 @@
             `<button class="del" type="button" aria-label="삭제">✕</button>`;
           li.querySelector('.cv').onclick = () => openSheet({ _veg: { plot: p, item: it }, name: it.name, cover: it.cover, note: it.note, count: 1 });
           li.querySelector('.del').onclick = () => {
+            const i = p.items.indexOf(it);
             p.items = p.items.filter((x) => x.id !== it.id);
-            save(true); renderVeg(); buzz(20); toast(it.name + ' 삭제');
+            pushUndo(`${it.name} 삭제`, () => p.items.splice(Math.min(i, p.items.length), 0, it));
+            save(true); renderVeg(); buzz(20);
           };
           ul.appendChild(li);
         });
@@ -688,31 +712,108 @@
     locate(site);
   }
 
-  function locate(site) {
+  /**
+   * 지점 좌표를 측정한다. 산속·수관 아래에서는 첫 시도가 자주 실패하므로
+   * 권한 거부가 아닌 한 한 번 더 시도한다(정확도 조건을 낮춰서).
+   */
+  function locate(site, retry) {
     if (!navigator.geolocation) { toast('이 기기는 위치를 지원하지 않습니다'); return; }
+    site.locating = true; renderSites();
     navigator.geolocation.getCurrentPosition(
       (p) => {
         site.lat = p.coords.latitude; site.lon = p.coords.longitude;
         site.alt = p.coords.altitude; site.acc = p.coords.accuracy; site.at = Date.now();
+        site.locating = false;
         save(true); renderSites();
         toast(`${site.name} 좌표 기록 (±${Math.round(p.coords.accuracy)}m)`);
+        buzz(20);
       },
-      (err) => toast('위치 실패: ' + (err.code === 1 ? '권한 거부' : err.code === 3 ? '시간초과' : '신호 없음')),
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+      (err) => {
+        if (err.code !== 1 && !retry) { locate(site, true); return; }   // 권한 거부가 아니면 재시도
+        site.locating = false;
+        save(true); renderSites();
+        toast(err.code === 1
+          ? '위치 권한이 꺼져 있습니다 · 좌표 없이 기록됩니다'
+          : '위치를 못 잡았습니다 · 지점을 눌러 다시 측정하세요');
+      },
+      retry
+        ? { enableHighAccuracy: false, timeout: 30000, maximumAge: 60000 }
+        : { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
   }
 
+  /* ───────── 지점 편집 ─────────
+   * prompt/confirm을 연달아 띄우면 장갑 낀 손으로 매번 통과해야 한다.
+   * 한 시트에서 이름·좌표·삭제를 모두 처리한다. */
+
+  // 제주 조사에서 자주 쓰는 지점명. 탭 한 번으로 넣는다.
+  const SITE_PRESETS = ['오름 북사면', '오름 남사면', '계곡부', '농로변', '임연부', '초지', '해안가', '하천변'];
+  let siteCtx = null;
+
   function editSite(site) {
+    siteCtx = site;
+    $('gsTitle').textContent = site.name;
+    $('gsName').value = site.name;
+    $('gsCoord').textContent = site.lat != null
+      ? `${C.toDMS(site.lat, true)}  ${C.toDMS(site.lon, false)}` +
+        (site.alt != null ? `  ${Math.round(site.alt)}m` : '') +
+        (site.acc != null ? `  ±${Math.round(site.acc)}m` : '')
+      : '좌표 없음';
+
     const s = cur();
-    const name = prompt('지점명 (취소하면 변경 없음)', site.name);
-    if (name !== null && name.trim()) { site.name = name.trim(); save(true); renderAll(); }
-    if (confirm(site.name + ' 위치를 지금 GPS로 (재)측정할까요?')) locate(site);
-    else if (s.sites.length > 1 && !s.records.some((r) => r.siteId === site.id)
-             && confirm(site.name + ' 지점을 삭제할까요? (기록 없음)')) {
+    const used = s.records.some((r) => r.siteId === site.id);
+    const del = $('gsDel');
+    del.disabled = s.sites.length <= 1;
+    del.textContent = used ? `지점 삭제 (기록 ${s.records.filter((r) => r.siteId === site.id).length}건)` : '지점 삭제';
+
+    const box = $('gsPresets'); box.innerHTML = '';
+    SITE_PRESETS.forEach((p) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip'; b.textContent = p;
+      b.onclick = () => { $('gsName').value = p; buzz(10); };
+      box.appendChild(b);
+    });
+
+    $('gsheet').hidden = false;
+  }
+
+  function bindSiteSheet() {
+    const close = () => { siteCtx = null; $('gsheet').hidden = true; };
+    $('gsheet').querySelector('.sheet-bg').onclick = close;
+
+    $('gsOk').onclick = () => {
+      if (!siteCtx) return close();
+      const v = $('gsName').value.trim();
+      if (v) siteCtx.name = v;
+      cur().currentSiteId = siteCtx.id;   // 연 지점으로 전환 — 목록에서 눌렀으면 거기서 이어 적는다
+      save(true); renderAll(); close();
+    };
+
+    $('gsLocate').onclick = () => {
+      if (!siteCtx) return;
+      const v = $('gsName').value.trim();
+      if (v) siteCtx.name = v;
+      locate(siteCtx); close();
+    };
+
+    $('gsDel').onclick = () => {
+      if (!siteCtx) return;
+      const s = cur();
+      if (s.sites.length <= 1) { toast('마지막 지점은 지울 수 없습니다'); return; }
+      const recs = s.records.filter((r) => r.siteId === siteCtx.id);
+      if (recs.length && !confirm(`${siteCtx.name}의 기록 ${recs.length}건도 함께 지워집니다. 계속할까요?`)) return;
+
+      const site = siteCtx;
+      const idx = s.sites.indexOf(site);
+      pushUndo(`${site.name} 삭제`, () => {
+        s.sites.splice(Math.min(idx, s.sites.length), 0, site);
+        s.records = s.records.concat(recs);
+      });
       s.sites = s.sites.filter((x) => x.id !== site.id);
+      s.records = s.records.filter((r) => r.siteId !== site.id);
       if (s.currentSiteId === site.id) s.currentSiteId = s.sites[0].id;
-      save(true); renderAll();
-    }
+      save(true); renderAll(); close();
+    };
   }
 
   /* ───────── 내보내기 ───────── */
@@ -749,10 +850,8 @@
     if (name === 'site') renderSites();
     if (name === 'veg') renderVeg();
     if (name === 'tree') renderTrees();
-    // 탭을 바꾸면 위로. jsdom 등 미구현 환경에서는 건너뛴다.
-    if (typeof window.scrollTo === 'function' && !window.navigator.userAgent.includes('jsdom')) {
-      try { window.scrollTo(0, 0); } catch (e) {}
-    }
+    scrollTop();
+    document.dispatchEvent(new CustomEvent('tabchange', { detail: name }));
   }
 
   function bindTabs() {
@@ -814,13 +913,18 @@
       if (!sheetCtx) return closeSheet();
       if (sheetCtx._veg) {
         const { plot, item } = sheetCtx._veg;
+        const i = plot.items.indexOf(item);
         plot.items = plot.items.filter((x) => x.id !== item.id);
-        save(true); closeSheet(); renderVeg(); toast('삭제됨');
+        pushUndo(`${item.name} 삭제`, () => plot.items.splice(Math.min(i, plot.items.length), 0, item));
+        save(true); closeSheet(); renderVeg();
         return;
       }
       const s = cur();
-      s.records = s.records.filter((r) => r.id !== sheetCtx.id);
-      save(true); closeSheet(); renderAll(); toast('삭제됨');
+      const rec = sheetCtx;
+      const i = s.records.indexOf(rec);
+      s.records = s.records.filter((r) => r.id !== rec.id);
+      pushUndo(`${rec.name} 삭제`, () => s.records.splice(Math.min(i, s.records.length), 0, rec));
+      save(true); closeSheet(); renderAll();
     };
     $('sheet').querySelector('.sheet-bg').onclick = closeAndPaint;
     $('ssheet').querySelector('.sheet-bg').onclick = () => { $('ssheet').hidden = true; };
@@ -845,9 +949,15 @@
             ? `"${s.title}"에 기록 ${s.records.length}건이 있습니다. 정말 삭제할까요?`
             : `"${s.title}"을(를) 삭제할까요?`;
           if (!confirm(msg)) return;
+          const i = state.surveys.indexOf(s);
+          const wasCurrent = state.currentId === s.id;
           state.surveys = state.surveys.filter((x) => x.id !== s.id);
-          if (state.currentId === s.id) state.currentId = state.surveys[0].id;
-          save(true); renderAll(); toast('조사 삭제됨');
+          if (wasCurrent) state.currentId = state.surveys[0].id;
+          pushUndo(`"${s.title}" 삭제`, () => {
+            state.surveys.splice(Math.min(i, state.surveys.length), 0, s);
+            if (wasCurrent) state.currentId = s.id;
+          });
+          save(true); renderAll();
           $('surveyBtn').onclick();   // 목록 갱신
         };
         li.onclick = () => { state.currentId = s.id; save(true); $('ssheet').hidden = true; renderAll(); };
@@ -927,11 +1037,13 @@
     };
     $('tsDel').onclick = () => {
       if (!treeCtx || treeCtx._new) { $('tsheet').hidden = true; treeCtx = null; return; }
-      if (!confirm(`${treeCtx.name || '이 수목'} 기록을 삭제할까요?`)) return;
       const s = cur();
-      s.trees = s.trees.filter((x) => x.id !== treeCtx.id);
+      const tree = treeCtx;
+      const i = s.trees.indexOf(tree);
+      s.trees = s.trees.filter((x) => x.id !== tree.id);
+      pushUndo(`${tree.name || '수목'} 삭제`, () => s.trees.splice(Math.min(i, s.trees.length), 0, tree));
       save(true); $('tsheet').hidden = true; treeCtx = null;
-      renderTrees(); toast('삭제됨');
+      renderTrees();
     };
     $('tsheet').querySelector('.sheet-bg').onclick = () => { $('tsheet').hidden = true; treeCtx = null; };
   }
@@ -949,11 +1061,14 @@
     $('psDel').onclick = () => {
       if (!plotCtx) return;
       const n = (plotCtx.items || []).length;
-      if (!confirm(`${plotCtx.name} 방형구를 삭제할까요?${n ? ` (기록 ${n}종도 함께)` : ''}`)) return;
+      if (n && !confirm(`${plotCtx.name} 방형구를 삭제할까요? (기록 ${n}종도 함께)`)) return;
       const s = cur();
-      s.plots = s.plots.filter((x) => x.id !== plotCtx.id);
+      const plot = plotCtx;
+      const i = s.plots.indexOf(plot);
+      s.plots = s.plots.filter((x) => x.id !== plot.id);
+      pushUndo(`${plot.name} 삭제`, () => s.plots.splice(Math.min(i, s.plots.length), 0, plot));
       save(true); $('psheet').hidden = true; plotCtx = null;
-      renderVeg(); toast('방형구 삭제됨');
+      renderVeg();
     };
     $('psheet').querySelector('.sheet-bg').onclick = () => { $('psheet').hidden = true; plotCtx = null; renderVeg(); };
 
@@ -1043,6 +1158,51 @@
     toast(`${what} 불러옴 · 사전에 없는 ${uniq.length}종: ${head}${uniq.length > 5 ? ' 외' : ''}`);
   }
 
+  /* ───────── 햇빛 모드 ─────────
+   * 땡볕 아래서는 어두운 화면이 안 보인다. 흰 배경·검은 글씨로 바꾼다.
+   * 조사 데이터가 아니라 기기 설정이므로 localStorage에 따로 둔다. */
+  function bindSunMode() {
+    const KEY = 'field_flora_sun';
+    const btn = $('sunToggle');
+    const paint = (on) => {
+      document.body.classList.toggle('sun', on);
+      btn.textContent = on ? '🌙 어두운 모드로' : '☀️ 햇빛 모드 (밝게)';
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', on ? '#0a6b33' : '#14532d');
+    };
+    let on = false;
+    try { on = localStorage.getItem(KEY) === '1'; } catch (e) { /* 사생활 보호 모드 */ }
+    paint(on);
+    btn.onclick = () => {
+      on = !on;
+      paint(on);
+      try { localStorage.setItem(KEY, on ? '1' : '0'); } catch (e) {}
+      buzz(12);
+      toast(on ? '햇빛 모드 — 밝은 곳에서 잘 보입니다' : '어두운 모드');
+    };
+  }
+
+  /* ───────── 플로팅 검색 버튼 ─────────
+   * 기록이 쌓이면 목록을 한참 내려보게 된다. 그때 검색창은 화면 위로 사라져
+   * 한 손으로는 닿지 않는다. 스크롤을 내리면 엄지 위치에 버튼을 띄운다. */
+  function bindFab() {
+    const fab = $('fabSearch');
+    const onRecTab = () => $('tab-rec').classList.contains('active');
+    const update = () => {
+      fab.hidden = !(onRecTab() && window.scrollY > 240);
+    };
+    fab.onclick = () => {
+      scrollTop(true);
+      const q = $('q');
+      q.focus();
+      if (q.value) q.select();
+      buzz(10);
+    };
+    window.addEventListener('scroll', update, { passive: true });
+    document.addEventListener('tabchange', update);
+    update();
+  }
+
   function bindRest() {
     const q = $('q');
     let tmr = null;
@@ -1109,7 +1269,7 @@
   }
 
   async function boot() {
-    bindTabs(); bindSheet(); bindSurveySheet(); bindTreeSheet(); bindPlotSheet(); bindRest(); bindWakeLock();
+    bindTabs(); bindSheet(); bindSurveySheet(); bindSiteSheet(); bindTreeSheet(); bindPlotSheet(); bindRest(); bindWakeLock(); bindSunMode(); bindFab();
 
     state = await kvGet('state');
     if (!state || !state.surveys || !state.surveys.length) {

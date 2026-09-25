@@ -74,6 +74,7 @@
   <!-- 요약/내보내기 탭 -->
   <section id="tab-sum" class="tab">
     <div class="pad">
+      <button id="sunToggle" class="sunbtn" type="button">☀️ 햇빛 모드 (밝게)</button>
       <div class="statgrid">
         <div class="stat"><b id="stTaxa">0</b><span>총 출현종</span></div>
         <div class="stat"><b id="stSites">0</b><span>조사지점</span></div>
@@ -123,6 +124,8 @@
     </div>
   </section>
 </main>
+
+<button id="fabSearch" class="fab" type="button" aria-label="종 검색으로" hidden>🔍 종 검색</button>
 
 <nav id="tabbar">
   <button data-tab="rec" class="on" type="button"><span>✎</span>식물상</button>
@@ -205,6 +208,23 @@
       <button id="tsDel" class="danger" type="button">삭제</button>
       <button id="tsOk" class="primary" type="button">저장</button>
     </div>
+  </div>
+</div>
+
+<!-- 지점 편집 시트 -->
+<div id="gsheet" class="sheet" hidden>
+  <div class="sheet-bg"></div>
+  <div class="sheet-body">
+    <h4 id="gsTitle">지점</h4>
+    <label class="field"><span>지점명</span>
+      <input id="gsName" type="text" placeholder="예: 오름 북사면" autocomplete="off"></label>
+    <div class="chiprow" id="gsPresets"></div>
+    <p class="gscoord" id="gsCoord">좌표 없음</p>
+    <div class="btnrow">
+      <button id="gsLocate" class="ghost" type="button">📍 GPS 재측정</button>
+      <button id="gsDel" class="ghost danger" type="button">지점 삭제</button>
+    </div>
+    <button id="gsOk" class="primary big" type="button">확인</button>
   </div>
 </div>
 
