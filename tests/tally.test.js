@@ -159,8 +159,12 @@ test('이중탭 확대 방지 CSS와 핀치 확대 허용', () => {
     pending.dispatchEvent(new window.Event('change',{bubbles:true}));
     const visible=()=>$('tallySites').querySelectorAll('.tally-row');
     assert.strictEqual(visible().length,expected-2);
-    click(visible()[0].querySelector('.plus'));
-    click(visible()[0].querySelector('.plus'));
+    const stableRow=visible()[0];
+    const nextRow=visible()[1] || null;
+    click(stableRow.querySelector('.plus'));
+    click(stableRow.querySelector('.plus'));
+    assert.strictEqual(visible()[0],stableRow,'연타 중 누른 행 DOM이 유지되어야 함');
+    if (nextRow) assert.strictEqual(visible()[1],nextRow,'다음 지점 DOM이 이동하면 안 됨');
     assert.strictEqual(visible().length,expected-2);
     assert.strictEqual(current().records.find((r)=>r.siteId===current().sites[2].id).count,2);
     assert.strictEqual(C.tallyCount(current(),species.i,current().sites[1].id),12);

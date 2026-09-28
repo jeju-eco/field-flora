@@ -1221,6 +1221,17 @@
   let tallyVisiblePending = null;
   let tallyPendingSurveyId = null;
   const tallyKey = (site) => tallyTaxon.i + ':' + site.id;
+  // 현장 연타 때 목록을 재생성하지 않는다. 행이 바뀌면 같은 좌표의 다음 지점을 오기록할 수 있다.
+  function paintTallyCount(s, site, row) {
+    const value = C.tallyCount(s, tallyTaxon.i, site.id);
+    row.classList.toggle('pending', value === null);
+    row.querySelector('.tally-label span').textContent = value === null ? '미조사' : value === 0 ? '미발견' : '확인';
+    row.querySelector('.amount').value = value === null ? '' : value;
+    const counts = s.sites.map((x) => C.tallyCount(s, tallyTaxon.i, x.id));
+    const visited = counts.filter((v) => v !== null).length;
+    const total = counts.reduce((n, v) => n + (v || 0), 0);
+    $('tallyStats').textContent = `조사 ${visited}/${s.sites.length}지점 · 합계 ${total}개체 · 미조사 ${s.sites.length - visited}지점`;
+  }
 
   function renderTally() {
     if (!$('tab-rec').classList.contains('tally-mode')) return;
@@ -1259,7 +1270,7 @@
         try { C.setTallyCount(s, tallyTaxon, site.id, num); }
         catch (e) { toast(e.message); return; }
         s.currentSiteId = site.id;
-        save(true); renderTop(); renderRecList(); renderSummary(); renderTally(); buzz(8);
+        save(true); paintTallyCount(s, site, row); buzz(8);
       };
       row.querySelector('.plus').onclick = () => set((C.tallyCount(s, tallyTaxon.i, site.id) || 0) + 1);
       row.querySelector('.minus').onclick = () => {
@@ -1270,9 +1281,9 @@
       row.querySelector('.zero').onclick = () => set(0);
       row.querySelector('.amount').onchange = (ev) => {
         const text = ev.target.value;
-        if (text === '') { renderTally(); return; } // 비우는 동작은 아래 '미조사로' 버튼
+        if (text === '') { paintTallyCount(s, site, row); return; } // 비우는 동작은 아래 '미조사로' 버튼
         const num = Number(text);
-        if (!Number.isSafeInteger(num) || num < 0 || num > 999999) { toast('0~999999의 정수를 입력하세요'); renderTally(); return; }
+        if (!Number.isSafeInteger(num) || num < 0 || num > 999999) { toast('0~999999의 정수를 입력하세요'); paintTallyCount(s, site, row); return; }
         set(num);
       };
       row.querySelector('.tally-note').oninput = (ev) => {
@@ -1286,7 +1297,7 @@
         if (v > 0 && !confirm(`${site.name}의 ${v}개체 기록을 지우고 미조사로 바꿀까요?`)) return;
         s.records = s.records.filter((r) => !(r.siteId === site.id && r.taxonId === tallyTaxon.i));
         delete s.tallyVisits[tallyKey(site)];
-        save(true); renderTop(); renderRecList(); renderSummary(); renderTally();
+        save(true); paintTallyCount(s, site, row);
       };
       container.appendChild(row);
     });
