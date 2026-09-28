@@ -4,6 +4,9 @@
   --tap:56px;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+/* 더블탭 확대와 뒤따르는 엉뚱한 탭을 막되, 두 손가락 확대는 허용한다. */
+html,body,main,button,.results li,.reclist li,.sitelist li,.tally-row{touch-action:manipulation}
+input,textarea,select{font-size:16px}
 html,body{margin:0;height:100%}
 body{
   background:var(--bg); color:var(--fg);
@@ -328,3 +331,32 @@ body.sun .toast{background:#000;color:#fff}
 }
 .fab:active{transform:scale(.95)}
 body.sun .fab{background:#0a6b33;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.3)}
+
+/* 지점별 개체수: 종 고정, 100여 지점을 세로로 빠르게 순회 */
+#tab-rec.tally-mode > :not(#tallyPanel){display:none !important}
+body.tally-active .site-row{display:none}
+.tally-entry{width:calc(100% - 24px);margin:10px 12px}
+.tally-panel{padding:12px;padding-bottom:90px}
+.tally-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.tally-head strong{font-size:20px}
+.tally-head button,.tally-actions button,#tallyUseSheet{min-height:48px;padding:0 12px;border-radius:10px;border:2px solid var(--line);background:var(--card);color:var(--fg);font-weight:700}
+#tallyQuery,#tallyFilter,#tallyNewName,#tallySheet{min-height:50px;width:100%;padding:0 12px;margin:7px 0;border:2px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg);font-size:16px}
+.tally-hits{list-style:none;padding:0;margin:0}
+.tally-hits button{width:100%;min-height:54px;text-align:left;padding:8px;border-bottom:1px solid var(--line);color:var(--fg)}
+.tally-stats{position:sticky;top:0;z-index:5;background:var(--accent-d);color:var(--fg);padding:12px;border-radius:10px;font-weight:800;font-size:17px}
+.tally-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:10px 0}
+.tally-actions #tallyNewName{grid-column:span 2;margin:0}
+#tallySheetPicker{padding:8px;border:1px solid var(--line);border-radius:10px}
+.tally-only{display:flex;align-items:center;gap:8px;min-height:48px;font-weight:700}
+.tally-only input{width:24px;height:24px}
+.tally-row{border:2px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px;background:var(--card)}
+.tally-row.pending{border-style:dashed}
+.tally-label{display:flex;justify-content:space-between;align-items:center;font-size:18px;margin-bottom:6px}
+.tally-label span{font-size:14px;color:var(--dim)}
+.tally-controls{display:flex;align-items:center;gap:5px}
+.tally-controls button{min-width:48px;min-height:54px;border:2px solid var(--line);border-radius:10px;background:var(--accent-d);color:var(--fg);font-size:23px;font-weight:800}
+.tally-controls .amount{width:100%;min-width:0;min-height:54px;text-align:center;border:2px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg);font-size:22px;font-weight:800}
+.tally-controls .zero{font-size:19px}
+.tally-note{min-height:46px;width:calc(100% - 94px);margin-top:8px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg);font-size:16px}
+.tally-row .unvisit{min-height:46px;width:90px;color:var(--dim);font-size:14px}
+body.sun .tally-stats{background:#d6f0e0;color:#000}

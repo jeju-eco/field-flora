@@ -1,7 +1,7 @@
 /* 오프라인 캐시 — 앱 셸은 캐시 우선, 사전은 최초 1회 저장 후 영구 사용 */
-const CACHE = 'field-flora-v9';
+const CACHE = 'field-flora-v10';
 const ASSETS = [
-  './', './index.html', './styles.css', './core.js', './app.js',
+  './', './index.html', './styles.css', './core.js', './app.js', './vendor/fflate.min.js',
   './data/taxa.json', './manifest.webmanifest',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png',
 ];

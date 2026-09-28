@@ -43,7 +43,8 @@
   function weigh(st) {
     if (!st || !Array.isArray(st.surveys)) return -1;
     let n = 0;
-    for (const s of st.surveys) n += (s.records ? s.records.length : 0) * 10 + (s.sites ? s.sites.length : 0);
+    for (const s of st.surveys) n += (s.records ? s.records.length : 0) * 10 +
+      (s.sites ? s.sites.length : 0) + Object.keys(s.tallyVisits || {}).length;
     return st.surveys.length + n;
   }
   async function kvGet(k) {
@@ -65,9 +66,12 @@
         } catch (e) { finish(undefined); }
       });
     }
-    // 두 저장소 중 내용이 더 많은 쪽을 채택한다.
-    // (한쪽만 살아있거나 뒤처진 경우에 기록을 잃지 않기 위함)
-    return weigh(idbVal) >= weigh(ls) ? (idbVal || ls) : (ls || idbVal);
+    // 개체수를 줄이거나 0으로 바꾼 최신 데이터를 '내용이 적다'고
+    // 과거 IDB로 덮지 않도록 저장 시각을 우선한다. 구형 데이터끼리는 내용량 비교.
+    if (idbVal && ls && (idbVal._rev || ls._rev)) {
+      return (ls._rev || 0) >= (idbVal._rev || 0) ? ls : idbVal;
+    }
+    return weigh(idbVal) > weigh(ls) ? (idbVal || ls) : (ls || idbVal);
   }
 
   /* ───────── 상태 ───────── */
@@ -99,13 +103,17 @@
   const cur = () => state.surveys.find((s) => s.id === state.currentId);
   /** 자동생성된 채 한 번도 안 쓴 조사인지 — 기록 0건이고 제목을 바꾸지 않았다 */
   const isEmptySurvey = (s) =>
-    (!s.records || s.records.length === 0) && /^조사 \d{4}-\d{2}-\d{2}$/.test(s.title || '');
+    (!s.records || s.records.length === 0) && !(s.plots || []).length && !(s.trees || []).length &&
+    (!s.sites || s.sites.length <= 1) && !s.tallyTaxonId &&
+    !Object.keys(s.tallyVisits || {}).length && !Object.keys(s.tallyNotes || {}).length &&
+    /^조사 \d{4}-\d{2}-\d{2}$/.test(s.title || '');
   const curSite = () => { const s = cur(); return s.sites.find((x) => x.id === s.currentSiteId) || s.sites[0]; };
 
   let saveTimer = null;
   function save(immediate) {
     clearTimeout(saveTimer);
-    const doIt = () => kvSet('state', state);
+    state._rev = Math.max(Date.now(), (state._rev || 0) + 1);
+    const doIt = () => kvSet('state', JSON.parse(JSON.stringify(state)));
     if (immediate) doIt(); else saveTimer = setTimeout(doIt, 250);
   }
 
@@ -155,11 +163,14 @@
     el._t = setTimeout(() => { el.hidden = true; undoAction = null; }, 4000);
   }
   function buzz(ms) { if (navigator.vibrate) navigator.vibrate(ms || 12); }
-  /** 화면 맨 위로. jsdom 등 scrollTo 미구현 환경에서는 조용히 넘어간다. */
+  /** 실제로 스크롤되는 본문을 맨 위로 올린다. */
   function scrollTop(smooth) {
-    if (typeof window.scrollTo !== 'function') return;
-    if (window.navigator.userAgent.includes('jsdom')) return;
-    try { window.scrollTo(smooth ? { top: 0, behavior: 'smooth' } : 0, 0); } catch (e) {}
+    const main = document.querySelector('main');
+    if (!main) return;
+    if (smooth && !window.navigator.userAgent.includes('jsdom') && typeof main.scrollTo === 'function') {
+      try { main.scrollTo({ top: 0, behavior: 'smooth' }); return; } catch (e) {}
+    }
+    main.scrollTop = 0;
   }
 
   /* ───────── 음성 입력 ─────────
@@ -416,7 +427,7 @@
     $('fTitle').value = s.title; $('fDate').value = s.date; $('fSurveyor').value = s.surveyor || '';
   }
 
-  function renderAll() { renderTop(); renderRecList(); renderRecent(); renderSites(); renderVeg(); renderTrees(); renderSummary(); }
+  function renderAll() { renderTop(); renderRecList(); renderRecent(); renderSites(); renderVeg(); renderTrees(); renderSummary(); renderTally(); }
 
   /* ───────── 동작 ───────── */
   /** 검색 결과를 탭하면 추가, 같은 종을 다시 탭하면 취소(토글) */
@@ -846,6 +857,7 @@
     document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
     const sec = $('tab-' + name);
     if (sec) sec.classList.add('active');
+    document.body.classList.toggle('tally-active', name === 'rec' && $('tab-rec').classList.contains('tally-mode'));
     if (name === 'sum') renderSummary();
     if (name === 'site') renderSites();
     if (name === 'veg') renderVeg();
@@ -1188,9 +1200,9 @@
   function bindFab() {
     const fab = $('fabSearch');
     const onRecTab = () => $('tab-rec').classList.contains('active');
-    const update = () => {
-      fab.hidden = !(onRecTab() && window.scrollY > 240);
-    };
+    const main = document.querySelector('main');
+    const update = () => { fab.hidden = !(onRecTab() && !onTally() && main.scrollTop > 240); };
+    const onTally = () => $('tab-rec').classList.contains('tally-mode');
     fab.onclick = () => {
       scrollTop(true);
       const q = $('q');
@@ -1198,9 +1210,199 @@
       if (q.value) q.select();
       buzz(10);
     };
-    window.addEventListener('scroll', update, { passive: true });
+    main.addEventListener('scroll', update, { passive: true });
     document.addEventListener('tabchange', update);
     update();
+  }
+
+  /* ───────── 한 종 · 다지점 개체수 순회 ───────── */
+  let tallyTaxon = null;
+  let xlsxReader = null;
+  let tallyVisiblePending = null;
+  let tallyPendingSurveyId = null;
+  const tallyKey = (site) => tallyTaxon.i + ':' + site.id;
+
+  function renderTally() {
+    if (!$('tab-rec').classList.contains('tally-mode')) return;
+    const s = cur();
+    if (s.id !== tallyPendingSurveyId) { tallyVisiblePending = null; tallyPendingSurveyId = s.id; }
+    tallyTaxon = index && index.byId.get(s.tallyTaxonId) || null;
+    $('tallySelected').hidden = !tallyTaxon;
+    if (!tallyTaxon) return;
+    $('tallySpecies').textContent = tallyTaxon.n + ' · ' + (s.title || '조사');
+    const counts = s.sites.map((site) => C.tallyCount(s, tallyTaxon.i, site.id));
+    const visited = counts.filter((v) => v !== null).length;
+    const total = counts.reduce((n, v) => n + (v || 0), 0);
+    $('tallyStats').textContent = `조사 ${visited}/${s.sites.length}지점 · 합계 ${total}개체 · 미조사 ${s.sites.length - visited}지점`;
+    const q = $('tallyFilter').value.trim().toLowerCase();
+    const pending = $('tallyPending').checked;
+    if (pending && !tallyVisiblePending) tallyVisiblePending = new Set(s.sites.filter((site, n) => counts[n] === null).map((site) => site.id));
+    const container = $('tallySites');
+    const scroll = document.querySelector('main').scrollTop;
+    container.replaceChildren();
+    s.sites.forEach((site, n) => {
+      const value = counts[n];
+      if (q && !site.name.toLowerCase().includes(q)) return;
+      if (pending && !tallyVisiblePending.has(site.id)) return;
+      const row = document.createElement('div');
+      row.className = 'tally-row' + (value === null ? ' pending' : '');
+      row.innerHTML = `<div class="tally-label"><strong>${esc(site.name)}</strong><span>${value === null ? '미조사' : value === 0 ? '미발견' : '확인'}</span></div>` +
+        `<div class="tally-controls"><button class="minus" type="button" aria-label="${esc(site.name)} 감소">－</button>` +
+        `<input class="amount" type="number" min="0" max="999999" inputmode="numeric" aria-label="${esc(site.name)} 개체수" placeholder="미조사" value="${value === null ? '' : value}">` +
+        `<button class="plus" type="button" aria-label="${esc(site.name)} 증가">＋</button>` +
+        `<button class="zero" type="button" aria-label="${esc(site.name)} 미발견 표시">0</button></div>` +
+        `<input class="tally-note" type="text" aria-label="${esc(site.name)} 비고" placeholder="비고·위협요소" value="${esc((s.tallyNotes || {})[tallyKey(site)] || '')}">` +
+        `<button class="unvisit" type="button">미조사로</button>`;
+      const set = (num) => {
+        const old = C.tallyCount(s, tallyTaxon.i, site.id);
+        if (old !== null && old > 0 && num === 0 && !confirm(`${site.name}의 ${old}개체 기록을 0으로 바꿀까요?`)) return;
+        try { C.setTallyCount(s, tallyTaxon, site.id, num); }
+        catch (e) { toast(e.message); return; }
+        s.currentSiteId = site.id;
+        save(true); renderTop(); renderRecList(); renderSummary(); renderTally(); buzz(8);
+      };
+      row.querySelector('.plus').onclick = () => set((C.tallyCount(s, tallyTaxon.i, site.id) || 0) + 1);
+      row.querySelector('.minus').onclick = () => {
+        const v = C.tallyCount(s, tallyTaxon.i, site.id);
+        if (v === null || v === 0) return;
+        set(v - 1);
+      };
+      row.querySelector('.zero').onclick = () => set(0);
+      row.querySelector('.amount').onchange = (ev) => {
+        const text = ev.target.value;
+        if (text === '') { renderTally(); return; } // 비우는 동작은 아래 '미조사로' 버튼
+        const num = Number(text);
+        if (!Number.isSafeInteger(num) || num < 0 || num > 999999) { toast('0~999999의 정수를 입력하세요'); renderTally(); return; }
+        set(num);
+      };
+      row.querySelector('.tally-note').oninput = (ev) => {
+        if (!s.tallyNotes) s.tallyNotes = {};
+        s.tallyNotes[tallyKey(site)] = ev.target.value;
+        save(true);
+      };
+      row.querySelector('.unvisit').onclick = () => {
+        const v = C.tallyCount(s, tallyTaxon.i, site.id);
+        if (v === null) return;
+        if (v > 0 && !confirm(`${site.name}의 ${v}개체 기록을 지우고 미조사로 바꿀까요?`)) return;
+        s.records = s.records.filter((r) => !(r.siteId === site.id && r.taxonId === tallyTaxon.i));
+        delete s.tallyVisits[tallyKey(site)];
+        save(true); renderTop(); renderRecList(); renderSummary(); renderTally();
+      };
+      container.appendChild(row);
+    });
+    document.querySelector('main').scrollTop = scroll;
+  }
+
+  function importTallySites(names) {
+    if (!names.length) { toast('지점명이 없습니다'); return false; }
+    const s = cur();
+    const existing = new Set(s.sites.map((site) => site.name));
+    const fresh = names.filter((name) => !existing.has(name));
+    const replaceDefault = s.sites.length === 1 && s.sites[0].name === 'St.1' &&
+      !s.records.length && !(s.plots || []).length && !(s.trees || []).length &&
+      s.sites[0].lat == null && !Object.keys(s.tallyNotes || {}).length &&
+      !Object.keys(s.tallyVisits || {}).length;
+    if (!confirm(`${names.length}개 지점명 확인 (${fresh.length}개 신규). ${replaceDefault ? '빈 St.1을 대체하고 ' : ''}가져올까요?\n과거 개체수·좌표는 가져오지 않습니다.`)) return false;
+    if (replaceDefault) { s.sites = []; existing.clear(); }
+    fresh.forEach((name) => s.sites.push({ id: uid(), name, lat: null, lon: null, alt: null, acc: null, at: Date.now() }));
+    if (!s.sites.some((site) => site.id === s.currentSiteId)) s.currentSiteId = s.sites[0].id;
+    save(true); renderAll(); toast(`지점 ${fresh.length}개 추가 · 과거 개체수는 미반영`);
+    return true;
+  }
+
+  function bindTally() {
+    const open = () => {
+      $('tab-rec').classList.add('tally-mode');
+      document.body.classList.add('tally-active');
+      $('tallyPanel').hidden = false;
+      const saved = cur().tallyTaxonId;
+      tallyTaxon = index && index.byId.get(saved) || null;
+      tallyVisiblePending = null;
+      renderTally();
+      scrollTop(); document.dispatchEvent(new window.Event('tabchange'));
+    };
+    $('openTally').onclick = open;
+    $('closeTally').onclick = () => {
+      $('tab-rec').classList.remove('tally-mode'); document.body.classList.remove('tally-active');
+      $('tallyPanel').hidden = true; tallyTaxon = null; renderAll(); scrollTop();
+      document.dispatchEvent(new window.Event('tabchange'));
+    };
+    $('tallyQuery').oninput = () => {
+      const q = $('tallyQuery').value.trim();
+      const ul = $('tallyHits'); ul.replaceChildren();
+      if (!q || !index) return;
+      C.search(index, q, 30).forEach((taxon) => {
+        const li = document.createElement('li');
+        const btn = document.createElement('button'); btn.type = 'button';
+        btn.textContent = taxon.n + (taxon.s ? ' · ' + taxon.s : '');
+        btn.onclick = () => {
+          tallyTaxon = taxon;
+          cur().tallyTaxonId = taxon.i;
+          tallyVisiblePending = null;
+          save(true); ul.replaceChildren(); $('tallyQuery').value = '';
+          renderTally(); $('tallyQuery').blur();
+        };
+        li.appendChild(btn); ul.appendChild(li);
+      });
+    };
+    $('tallyFilter').oninput = renderTally;
+    $('tallyPending').onchange = () => { tallyVisiblePending = null; renderTally(); };
+    $('tallyAddSite').onclick = () => {
+      const name = $('tallyNewName').value.trim();
+      if (!name) { toast('실제 지점명을 먼저 입력하세요'); return; }
+      if (cur().sites.some((x) => x.name === name)) { toast('이미 있는 지점명입니다'); return; }
+      cur().sites.push({ id: uid(), name, lat: null, lon: null, alt: null, acc: null, at: Date.now() });
+      $('tallyNewName').value = '';
+      save(true); renderTop(); renderSites(); renderTally();
+    };
+    $('tallyImportSites').onclick = () => $('tallySiteFile').click();
+    $('tallySiteFile').onchange = async (ev) => {
+      const f = ev.target.files[0]; ev.target.value = '';
+      if (!f) return;
+      if (f.size > 5 * 1024 * 1024) { toast('5MB 이하 XLSX·CSV만 가능합니다'); return; }
+      try {
+        if (/\.xlsx$/i.test(f.name)) {
+          if (!window.fflate) throw new Error('오프라인 XLSX 읽기 모듈이 없습니다');
+          xlsxReader = C.xlsxSiteReader(new Uint8Array(await f.arrayBuffer()), window.fflate.unzipSync);
+          const sel = $('tallySheet'); sel.replaceChildren();
+          xlsxReader.sheets.forEach((name) => { const opt = document.createElement('option'); opt.value = name; opt.textContent = name; sel.appendChild(opt); });
+          sel.value = xlsxReader.sheets[xlsxReader.sheets.length - 1];
+          $('tallySheetPicker').hidden = false;
+          toast('시트를 확인하고 지점명 가져오기를 누르세요');
+        } else if (/\.csv$/i.test(f.name)) {
+          importTallySites(C.parseSiteNames(await f.text()));
+        } else throw new Error('XLSX 또는 UTF-8 CSV만 지원합니다');
+      } catch (e) { toast('지점명 읽기 실패: ' + e.message); }
+    };
+    $('tallyUseSheet').onclick = () => {
+      if (!xlsxReader) return;
+      try {
+        if (importTallySites(xlsxReader.sites($('tallySheet').value))) {
+          $('tallySheetPicker').hidden = true; xlsxReader = null;
+        }
+      }
+      catch (e) { toast('시트 읽기 실패: ' + e.message); }
+    };
+    $('tallyExport').onclick = () => {
+      if (!tallyTaxon) return;
+      download(C.fileStamp(cur()) + '_' + tallyTaxon.n + '_지점별개체수.csv', C.toTallyCSV(cur(), tallyTaxon));
+    };
+    $('tallyNextRound').onclick = () => {
+      if (!tallyTaxon) return;
+      const s = cur();
+      const month = Number(todayISO().slice(5, 7));
+      const suggested = `${tallyTaxon.n} ${todayISO().slice(0, 4)}년 ${Math.ceil(month / 3)}분기`;
+      const title = prompt('새 차수 조사명 (기존 자료는 보존)', suggested);
+      if (title === null || !title.trim()) return;
+      if (!confirm(`${s.sites.length}개 지점명만 새 조사에 복사합니다. 개체수·비고·좌표는 복사하지 않습니다. 계속할까요?`)) return;
+      const next = newSurvey(title.trim());
+      next.sites = s.sites.map((site) => ({ id: uid(), name: site.name, lat: null, lon: null, alt: null, acc: null, at: Date.now() }));
+      next.currentSiteId = next.sites[0].id;
+      next.tallyTaxonId = tallyTaxon.i;
+      state.surveys.push(next); state.currentId = next.id;
+      tallyVisiblePending = null;
+      save(true); renderAll(); toast('새 차수 · 전 지점 미조사로 시작');
+    };
   }
 
   function bindRest() {
@@ -1269,7 +1471,7 @@
   }
 
   async function boot() {
-    bindTabs(); bindSheet(); bindSurveySheet(); bindSiteSheet(); bindTreeSheet(); bindPlotSheet(); bindRest(); bindWakeLock(); bindSunMode(); bindFab();
+    bindTabs(); bindSheet(); bindSurveySheet(); bindSiteSheet(); bindTreeSheet(); bindPlotSheet(); bindRest(); bindWakeLock(); bindSunMode(); bindFab(); bindTally();
 
     state = await kvGet('state');
     if (!state || !state.surveys || !state.surveys.length) {

@@ -26,7 +26,7 @@ const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
  * @param {string|null} lsState localStorage에 미리 넣어둘 상태 JSON
  * @param {string} idbMode 'ok' | 'missing'(열리지만 값 없음) | 'hang'(응답 없음) | 'none'(미지원)
  */
-async function boot(lsState, idbMode) {
+async function boot(lsState, idbMode, idbState) {
   const vc = new VirtualConsole();
   const errors = [];
   vc.on('jsdomError', (e) => errors.push(e.message));
@@ -36,6 +36,7 @@ async function boot(lsState, idbMode) {
 
   // IndexedDB 동작을 모드별로 흉내낸다
   const store = new Map();
+  if (idbState) store.set('state', JSON.parse(idbState));
   if (idbMode === 'none') {
     Object.defineProperty(window, 'indexedDB', { value: undefined, configurable: true });
   } else {
@@ -153,6 +154,29 @@ async function main() {
     });
   }
 
+  console.log('[개체수를 줄인 새 저장값이 오래된 IDB에 덮이지 않는가]');
+  {
+    const older = JSON.parse(makeState(1, true)); older._rev = 100;
+    older.surveys[0].records[0].count = 12;
+    const newer = JSON.parse(JSON.stringify(older)); newer._rev = 101;
+    newer.surveys[0].records[0].count = 0;
+    const a = await boot(JSON.stringify(newer), 'ok', JSON.stringify(older));
+    t('최신 localStorage의 감소한 개체수 보존', () => {
+      assert.strictEqual(a.ls().surveys[0].records[0].count, 0);
+    });
+  }
+  {
+    const older = JSON.parse(makeState(1, true)); older._rev = 100;
+    older.surveys[0].records[0].count = 12;
+    const newer = JSON.parse(JSON.stringify(older)); newer._rev = 101;
+    newer.surveys[0].records = [];
+    newer.surveys[0].tallyVisits = { [subset[0].i + ':site0']: 101 };
+    const a = await boot(JSON.stringify(newer), 'ok', JSON.stringify(older));
+    t('최신 0개체 상태를 오래된 양수 기록이 덮지 않음', () => {
+      assert.strictEqual(a.ls().surveys[0].records.length, 0);
+      assert.ok(a.ls().surveys[0].tallyVisits[subset[0].i + ':site0']);
+    });
+  }
   console.log('[최초 실행]');
   {
     const a = await boot(null, 'ok');

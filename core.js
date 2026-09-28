@@ -374,6 +374,119 @@
     return { trees, unknown, skipped };
   }
 
+  /* ── 한 종을 여러 지점에서 순회 계수 ──
+   * null=미조사, 0=조사했지만 미발견, 양수=기록.
+   * 0은 출현 기록으로 만들지 않는다. CSV/요약의 출현종수 왜곡 방지. */
+  function tallyCount(survey, taxonId, siteId) {
+    const rows = (survey.records || []).filter((r) => r.siteId === siteId && r.taxonId === taxonId);
+    if (rows.length) return rows.reduce((sum, r) => sum + Number(r.count || 0), 0);
+    return (survey.tallyVisits || {})[taxonId + ':' + siteId] ? 0 : null;
+  }
+
+  function setTallyCount(survey, taxon, siteId, count) {
+    if (!(survey.sites || []).some((s) => s.id === siteId)) throw new Error('없는 지점');
+    if (!Number.isSafeInteger(count) || count < 0 || count > 999999) throw new Error('개체수는 0~999999의 정수');
+    const rows = survey.records.filter((r) => r.siteId === siteId && r.taxonId === taxon.i);
+    if (rows.length > 1) throw new Error('같은 지점의 동일 종 기록이 중복되어 있습니다. 기록 CSV를 먼저 정리하세요.');
+    if (!survey.tallyVisits) survey.tallyVisits = {};
+    survey.tallyVisits[taxon.i + ':' + siteId] = Date.now();
+    if (count === 0) {
+      // 기존 비고·우점도를 삭제하지 않도록 명시적 확인은 UI에서 담당한다.
+      survey.records = survey.records.filter((r) => !(r.siteId === siteId && r.taxonId === taxon.i));
+    } else if (rows.length) {
+      rows[0].count = count;
+    } else {
+      survey.records.push({ id: 'R' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+        siteId, taxonId: taxon.i, name: taxon.n, scientific: taxon.s || '', family: taxon.f || '',
+        count, cover: '', note: '', at: Date.now() });
+    }
+    return count;
+  }
+
+  /** 실제 지점명만 CSV에서 읽는다. 좌표나 조사 결과를 만들지 않는다. */
+  function parseSiteNames(text) {
+    const rows = parseCSV(text);
+    if (!rows.length) return [];
+    const h = rows[0].map((x) => String(x).replace(/\s/g, ''));
+    const col = h.findIndex((x) => ['지점', '지점명', '조사지점'].includes(x));
+    if (col < 0) throw new Error('CSV 첫 줄에 지점 열이 필요합니다');
+    const names = rows.slice(1).map((r) => String(r[col] || '').trim()).filter(Boolean);
+    if (new Set(names).size !== names.length) throw new Error('지점명이 중복됩니다');
+    return names;
+  }
+
+  function toTallyCSV(survey, taxon) {
+    const lines = [['조사명', '조사일', '종명', '지점', '조사상태', '개체수', '비고'].join(',')];
+    let total = 0, visited = 0;
+    for (const site of survey.sites || []) {
+      const count = tallyCount(survey, taxon.i, site.id);
+      const rec = (survey.records || []).find((r) => r.siteId === site.id && r.taxonId === taxon.i);
+      if (count !== null) { visited++; total += count; }
+      lines.push([survey.title || '', survey.date || '', taxon.n, site.name,
+        count === null ? '미조사' : count === 0 ? '미발견' : '확인', count === null ? '' : count,
+        (survey.tallyNotes || {})[taxon.i + ':' + site.id] || (rec ? rec.note || '' : '')].map(csvCell).join(','));
+    }
+    lines.push(['합계', '', taxon.n, '조사지점 ' + visited + '개소', '', total, ''].map(csvCell).join(','));
+    return lines.join('\r\n');
+  }
+
+  /** XLSX에서 시트명/지점 열을 읽는다. 좌표·과거 개체수는 가져오지 않는다. */
+  function xlsxSiteReader(bytes, unzip) {
+    const files = unzip(bytes);
+    const dec = new TextDecoder('utf-8');
+    const ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+    const relNs = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+    const parse = (path) => {
+      if (!files[path]) throw new Error('XLSX 파일에 ' + path + '가 없습니다');
+      const xml = new DOMParser().parseFromString(dec.decode(files[path]), 'application/xml');
+      if (xml.getElementsByTagName('parsererror').length) throw new Error('XLSX XML을 읽지 못했습니다');
+      return xml;
+    };
+    const wb = parse('xl/workbook.xml');
+    const rel = parse('xl/_rels/workbook.xml.rels');
+    const links = new Map(Array.from(rel.getElementsByTagName('*'))
+      .filter((el) => el.localName === 'Relationship').map((el) => [el.getAttribute('Id'), el.getAttribute('Target')]));
+    const sheets = Array.from(wb.getElementsByTagNameNS(ns, 'sheet')).map((el) => {
+      const target = links.get(el.getAttributeNS(relNs, 'id'));
+      if (!target || target.includes('..')) throw new Error('유효하지 않은 XLSX 시트 경로');
+      return { name: el.getAttribute('name'), path: target.startsWith('/') ? target.slice(1) : 'xl/' + target };
+    });
+    const strings = files['xl/sharedStrings.xml'] ? Array.from(parse('xl/sharedStrings.xml').getElementsByTagNameNS(ns, 'si'))
+      .map((si) => Array.from(si.getElementsByTagNameNS(ns, 't')).map((t) => t.textContent).join('')) : [];
+    return {
+      sheets: sheets.map((s) => s.name),
+      sites(name) {
+        const sheet = sheets.find((s) => s.name === name);
+        if (!sheet) throw new Error('시트를 찾을 수 없습니다');
+        const xml = parse(sheet.path);
+        const rows = Array.from(xml.getElementsByTagNameNS(ns, 'row'));
+        const names = [];
+        let column = null;
+        for (const row of rows) {
+          const cells = Array.from(row.getElementsByTagNameNS(ns, 'c'));
+          const value = (c) => {
+            const type = c.getAttribute('t');
+            const v = c.getElementsByTagNameNS(ns, 'v')[0];
+            const text = v ? v.textContent : type === 'inlineStr'
+              ? Array.from(c.getElementsByTagNameNS(ns, 't')).map((t) => t.textContent).join('') : '';
+            return type === 's' ? (strings[Number(text)] || '') : (text || '');
+          };
+          if (column === null) {
+            const header = cells.find((c) => ['이름', '지점', '지점명', '조사지점'].includes(value(c).trim()));
+            if (header) column = header.getAttribute('r').match(/^[A-Z]+/)[0];
+            continue;
+          }
+          const cell = cells.find((c) => c.getAttribute('r').match(/^[A-Z]+/)[0] === column);
+          const name = cell ? value(cell).trim() : '';
+          if (name) names.push(name);
+        }
+        if (column === null) throw new Error('이름 또는 지점 열이 없는 시트입니다');
+        if (new Set(names).size !== names.length) throw new Error('지점명이 중복됩니다');
+        return names;
+      },
+    };
+  }
+
   /** 지점 x 종 출현 매트릭스 CSV (조사표 서식) */
   function toMatrixCSV(survey) {
     const sites = survey.sites || [];
@@ -481,6 +594,7 @@
     COVER, toDMS, summarize, toRecordsCSV, toMatrixCSV, fileStamp, csvCell,
     LAYERS, LAYER_LABEL, PLOT_SIZES, TREE_ACTIONS, TREE_ACTION_LABEL,
     dbhClass, treeSpec, summarizeTrees, toVegCSV, toTreeCSV,
-    parseCSV, parseRecordsCSV, parseTreeCSV,
+    parseCSV, parseRecordsCSV, parseTreeCSV, parseSiteNames,
+    tallyCount, setTallyCount, toTallyCSV, xlsxSiteReader,
   };
 });

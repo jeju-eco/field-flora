@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#14532d">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -36,6 +36,23 @@
       <button id="vegBannerEnd" type="button">완료</button>
     </div>
     <ul id="results" class="results"></ul>
+    <button id="openTally" class="primary tally-entry" type="button">◎ 한 종 · 여러 지점 개체수 조사</button>
+    <div id="tallyPanel" class="tally-panel" hidden>
+      <div class="tally-head"><strong>지점별 개체수</strong><button id="closeTally" type="button">일반 기록으로</button></div>
+      <p class="hint">종을 고정하고 지점마다 ＋/－로 셉니다. 빈칸=미조사, 0=조사 후 미발견입니다.</p>
+      <input id="tallyQuery" type="search" placeholder="조사할 종 검색 · 예: 제주고사리삼" autocomplete="off" aria-label="순회 조사 종 검색">
+      <ul id="tallyHits" class="tally-hits"></ul>
+      <div id="tallySelected" hidden>
+        <h3 id="tallySpecies"></h3>
+        <div id="tallyStats" class="tally-stats"></div>
+        <div class="tally-actions"><input id="tallyNewName" type="text" placeholder="새 지점명" aria-label="추가할 지점명"><button id="tallyAddSite" type="button">＋ 지점</button><button id="tallyImportSites" type="button">야장 XLSX·CSV</button><button id="tallyNextRound" type="button">다음 차수</button><button id="tallyExport" type="button">이 종 CSV</button></div>
+                <input id="tallySiteFile" type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden>
+                <div id="tallySheetPicker" hidden><label>가져올 시트 <select id="tallySheet"></select></label><button id="tallyUseSheet" type="button">지점명 가져오기</button></div>
+        <input id="tallyFilter" type="search" placeholder="지점명 찾기" aria-label="지점명 찾기">
+        <label class="tally-only"><input id="tallyPending" type="checkbox"> 미조사 지점만</label>
+        <div id="tallySites" class="tally-sites"></div>
+      </div>
+    </div>
     <div id="recentWrap">
       <h3 class="section-h">최근 입력 <span class="hint">탭하면 즉시 추가</span></h3>
       <div id="recent" class="quickgrid"></div>
@@ -250,6 +267,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
+<script src="vendor/fflate.min.js"></script>
 <script src="core.js"></script>
 <script src="app.js"></script>
 </body>
