@@ -257,12 +257,12 @@ t('좌표가 있으면 조서에 기록', () => {
   t('수종 선택됨', () => assert.ok($('tsPicked').classList.contains('ok'), $('tsPicked').textContent));
 
   // 장갑 낀 손으로 ± 버튼
-  const dbhPlus = $('tsheet').querySelector('.stepper button[data-f="dbh"][data-d="1"]');
-  for (let i = 0; i < 25; i++) click(dbhPlus);
+  const dbhPlus = $('tsheet').querySelector('.stepper button[data-f="dbh"][data-d="2"]');
+  for (let i = 0; i < 13; i++) click(dbhPlus);
   await sleep(60);
-  t('＋ 버튼으로 흉고직경 입력', () => assert.strictEqual($('tDbh').value, '25'));
+  t('＋2cm 버튼으로 흉고직경 입력', () => assert.strictEqual($('tDbh').value, '26'));
   t('규격·등급이 실시간 표시', () => {
-    assert.ok($('tSpec').textContent.includes('B25'), $('tSpec').textContent);
+    assert.ok($('tSpec').textContent.includes('B26'), $('tSpec').textContent);
     assert.ok($('tSpec').textContent.includes('대경목'), $('tSpec').textContent);
   });
   t('수목에도 GPS 자동 기록', () => assert.ok($('tSpec').textContent.includes('GPS ✓'), $('tSpec').textContent));
@@ -282,13 +282,13 @@ t('좌표가 있으면 조서에 기록', () => {
     assert.ok($('tsheet').hidden, '시트 남음');
     const raw = readState();
     assert.strictEqual(raw.surveys[0].trees.length, 1);
-    assert.strictEqual(raw.surveys[0].trees[0].dbh, '25');
+    assert.strictEqual(raw.surveys[0].trees[0].dbh, '26');
     assert.strictEqual(raw.surveys[0].trees[0].action, 'cut');
   });
   t('수목 목록에 규격·조치가 보임', () => {
     const txt = $('treeList').textContent;
     assert.ok(txt.includes('곰솔'), txt);
-    assert.ok(txt.includes('B25'), txt);
+    assert.ok(txt.includes('B26'), txt);
     assert.ok(txt.includes('벌채'), txt);
   });
   t('상단에 본수 집계 표시', () => assert.ok($('treeStat').textContent.includes('1'), $('treeStat').textContent));

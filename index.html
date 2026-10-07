@@ -195,28 +195,29 @@
     <ul id="tsResults" class="results mini"></ul>
     <p id="tsPicked" class="picked">수종을 먼저 고르세요</p>
 
+    <p class="measure-hint">숫자칸을 누르면 키보드로 직접 입력 · 버튼은 표시된 단위만큼 증감</p>
     <div class="numrow">
-      <label><span>흉고직경 cm</span>
-        <div class="stepper"><button data-f="dbh" data-d="-1" type="button">−</button>
-        <input id="tDbh" type="number" inputmode="decimal" min="0" step="1">
-        <button data-f="dbh" data-d="1" type="button">＋</button></div>
+      <label><span>흉고직경 B (cm)</span>
+        <div class="stepper"><button data-f="dbh" data-d="-2" type="button" aria-label="흉고직경 2cm 감소">−2</button>
+        <input id="tDbh" type="number" inputmode="decimal" min="0" step="2" placeholder="직접입력" aria-label="흉고직경 cm 직접 입력">
+        <button data-f="dbh" data-d="2" type="button" aria-label="흉고직경 2cm 증가">＋2</button></div>
       </label>
-      <label><span>수고 m</span>
-        <div class="stepper"><button data-f="height" data-d="-0.5" type="button">−</button>
-        <input id="tHeight" type="number" inputmode="decimal" min="0" step="0.5">
-        <button data-f="height" data-d="0.5" type="button">＋</button></div>
+      <label><span>수고 H (m)</span>
+        <div class="stepper"><button data-f="height" data-d="-0.5" type="button" aria-label="수고 0.5m 감소">−0.5</button>
+        <input id="tHeight" type="number" inputmode="decimal" min="0" step="0.5" placeholder="직접입력" aria-label="수고 m 직접 입력">
+        <button data-f="height" data-d="0.5" type="button" aria-label="수고 0.5m 증가">＋0.5</button></div>
       </label>
     </div>
     <div class="numrow">
-      <label><span>수관폭 m</span>
-        <div class="stepper"><button data-f="crown" data-d="-0.5" type="button">−</button>
-        <input id="tCrown" type="number" inputmode="decimal" min="0" step="0.5">
-        <button data-f="crown" data-d="0.5" type="button">＋</button></div>
+      <label><span>수관폭 W (m)</span>
+        <div class="stepper"><button data-f="crown" data-d="-0.5" type="button" aria-label="수관폭 0.5m 감소">−0.5</button>
+        <input id="tCrown" type="number" inputmode="decimal" min="0" step="0.5" placeholder="직접입력" aria-label="수관폭 m 직접 입력">
+        <button data-f="crown" data-d="0.5" type="button" aria-label="수관폭 0.5m 증가">＋0.5</button></div>
       </label>
-      <label><span>본수</span>
-        <div class="stepper"><button data-f="stems" data-d="-1" type="button">−</button>
-        <input id="tStems" type="number" inputmode="numeric" min="1" value="1">
-        <button data-f="stems" data-d="1" type="button">＋</button></div>
+      <label><span>본수 (본)</span>
+        <div class="stepper"><button data-f="stems" data-d="-1" type="button" aria-label="본수 1 감소">−1</button>
+        <input id="tStems" type="number" inputmode="numeric" min="1" step="1" value="1" aria-label="본수 직접 입력">
+        <button data-f="stems" data-d="1" type="button" aria-label="본수 1 증가">＋1</button></div>
       </label>
     </div>
     <div class="stems-quick" aria-label="본수 빠른 선택"><span>본수 빠른선택</span><button type="button" data-n="1">1</button><button type="button" data-n="2">2</button><button type="button" data-n="3">3</button><button type="button" data-n="5">5</button><button type="button" data-n="10">10</button></div>

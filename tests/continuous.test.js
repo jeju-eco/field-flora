@@ -37,6 +37,7 @@ function test(name,fn){try{fn();pass++;console.log('OK',name);}catch(e){fail++;c
  input($('tDbh'),'10');input($('tHeight'),'5');input($('tCrown'),'2');
  click($('tActions').querySelector('[data-v="cut"]'));
  test('규격·조치 입력 즉시 저장',()=>{const t=current().trees[0];assert.strictEqual(t.dbh,'10');assert.strictEqual(t.height,'5');assert.strictEqual(t.crown,'2');assert.strictEqual(t.action,'cut');});
+ test('직경 2cm 버튼과 키보드 직접입력 표시',()=>{assert.strictEqual($('tDbh').step,'2');assert.strictEqual($('tDbh').getAttribute('inputmode'),'decimal');assert.strictEqual($('tDbh').placeholder,'직접입력');assert.strictEqual($('tsheet').querySelector('[data-f="dbh"][data-d="2"]').textContent,'＋2');assert.match($('tsheet').textContent,/흉고직경 B \(cm\).*수고 H \(m\).*수관폭 W \(m\)/s);});
  click($('tsNext'));
  test('같은 수종 다음 규격은 검색 없이 새 행',()=>{const a=current().trees;assert.strictEqual(a.length,2);assert.strictEqual(a[1].name,'곰솔');assert.strictEqual(a[1].action,'cut');assert.strictEqual(a[1].dbh,'');});
  input($('tDbh'),'20');click($('tsNext'));input($('tDbh'),'30');
