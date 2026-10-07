@@ -34,6 +34,7 @@
     <div id="vegBanner" class="vegbanner" hidden>
       <span id="vegBannerTxt"></span>
       <button id="vegBannerEnd" type="button">완료</button>
+      <div id="vegQuick" class="vegquick" hidden></div>
     </div>
     <ul id="results" class="results"></ul>
     <button id="openTally" class="primary tally-entry" type="button">◎ 한 종 · 여러 지점 개체수 조사</button>
@@ -218,12 +219,14 @@
         <button data-f="stems" data-d="1" type="button">＋</button></div>
       </label>
     </div>
+    <div class="stems-quick" aria-label="본수 빠른 선택"><span>본수 빠른선택</span><button type="button" data-n="1">1</button><button type="button" data-n="2">2</button><button type="button" data-n="3">3</button><button type="button" data-n="5">5</button><button type="button" data-n="10">10</button></div>
     <p id="tSpec" class="spec"></p>
     <div id="tActions" class="coverbtns"></div>
     <label class="field"><span>비고</span><input id="tNote" type="text" placeholder="수형·생육상태·이식 가능성"></label>
-    <div class="btnrow">
+    <div class="btnrow tree-foot">
       <button id="tsDel" class="danger" type="button">삭제</button>
-      <button id="tsOk" class="primary" type="button">저장</button>
+      <button id="tsNext" class="ghost" type="button">＋ 같은 수종 다음 규격</button>
+      <button id="tsOk" class="primary" type="button">완료</button>
     </div>
   </div>
 </div>

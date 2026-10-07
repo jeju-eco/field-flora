@@ -1,0 +1,83 @@
+/* 현장 연속입력 회귀: 훼손수목 종별 규격 + 식생 다종/우점도 */
+'use strict';
+const assert=require('assert');
+const fs=require('fs');
+const path=require('path');
+const {JSDOM}=require('jsdom');
+const root=path.join(__dirname,'..');
+const dict=JSON.parse(fs.readFileSync(path.join(root,'data/taxa.json'),'utf8'));
+const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+let pass=0,fail=0;
+function test(name,fn){try{fn();pass++;console.log('OK',name);}catch(e){fail++;console.error('FAIL',name,e.stack);}}
+(async()=>{
+ const dom=new JSDOM(html,{url:'https://example.test/',runScripts:'outside-only',pretendToBeVisual:true});
+ const w=dom.window,$=id=>w.document.getElementById(id);
+ const geo=[]; const errors=[];
+ w.addEventListener('error',e=>errors.push(e.error&&e.error.stack||e.message));
+ Object.defineProperty(w,'indexedDB',{value:undefined,configurable:true});
+ Object.defineProperty(w.navigator,'geolocation',{value:{getCurrentPosition(ok,err,opt){geo.push({ok,err,opt});}},configurable:true});
+ w.navigator.vibrate=()=>true;
+ w.fetch=()=>Promise.resolve({ok:true,json:()=>Promise.resolve(dict)});
+ w.confirm=()=>true;w.URL.createObjectURL=()=> 'blob:test';w.URL.revokeObjectURL=()=>{};
+ w.eval(fs.readFileSync(path.join(root,'core.js'),'utf8'));
+ w.eval(fs.readFileSync(path.join(root,'app.js'),'utf8'));
+ const click=el=>el.dispatchEvent(new w.MouseEvent('click',{bubbles:true}));
+ const input=(el,v)=>{el.value=v;el.dispatchEvent(new w.Event('input',{bubbles:true}));};
+ const state=()=>JSON.parse(w.localStorage.getItem('field_flora_state'));
+ const current=()=>{const s=state();return s.surveys.find(x=>x.id===s.currentId);};
+ const tab=n=>click(w.document.querySelector(`#tabbar button[data-tab="${n}"]`));
+ const search=async(el,text,list)=>{input(el,text);await sleep(80);const li=$(list).querySelector('li');assert.ok(li,`검색 결과 없음: ${text}`);click(li);};
+ await sleep(1500);
+
+ tab('tree');click($('addTree'));
+ test('수목 새 입력은 수종 선택 전 저장하지 않음',()=>assert.strictEqual(current().trees.length,0));
+ await search($('tsQ'),'곰솔','tsResults');
+ test('수종 선택 즉시 첫 행 저장',()=>{assert.strictEqual(current().trees.length,1);assert.strictEqual(current().trees[0].name,'곰솔');});
+ input($('tDbh'),'10');input($('tHeight'),'5');input($('tCrown'),'2');
+ click($('tActions').querySelector('[data-v="cut"]'));
+ test('규격·조치 입력 즉시 저장',()=>{const t=current().trees[0];assert.strictEqual(t.dbh,'10');assert.strictEqual(t.height,'5');assert.strictEqual(t.crown,'2');assert.strictEqual(t.action,'cut');});
+ click($('tsNext'));
+ test('같은 수종 다음 규격은 검색 없이 새 행',()=>{const a=current().trees;assert.strictEqual(a.length,2);assert.strictEqual(a[1].name,'곰솔');assert.strictEqual(a[1].action,'cut');assert.strictEqual(a[1].dbh,'');});
+ input($('tDbh'),'20');click($('tsNext'));input($('tDbh'),'30');
+ test('곰솔 3규격 연속 입력',()=>assert.deepStrictEqual(current().trees.map(x=>x.dbh),['10','20','30']));
+ // 첫 GPS가 늦게 와도 첫 행에, 이후 GPS는 각 생성 행에 붙어야 한다.
+ assert.ok(geo.length>=3,'GPS 요청 3개 미만');
+ geo[0].ok({coords:{latitude:33.1,longitude:126.1}});
+ geo[1].ok({coords:{latitude:33.2,longitude:126.2}});
+ geo[2].ok({coords:{latitude:33.3,longitude:126.3}});
+ test('비동기 GPS가 생성한 각 수목 행에 고정',()=>assert.deepStrictEqual(current().trees.map(x=>x.lat),[33.1,33.2,33.3]));
+ click($('tsOk'));
+ test('완료 후 3행·3본 보존',()=>{assert.strictEqual(current().trees.length,3);assert.strictEqual(current().trees.reduce((n,x)=>n+x.stems,0),3);});
+
+ tab('veg');click($('addPlot'));
+ const addButtons=$('plotWrap').querySelectorAll('.add-sp');assert.strictEqual(addButtons.length,4);click(addButtons[0]);
+ const addVeg=async(name,cover)=>{
+   input($('q'),name);await sleep(90);
+   const hit=$('results').querySelector('li');assert.ok(hit,`식생 검색 결과 없음: ${name}`);click(hit);
+   const b=Array.from($('vegQuick').querySelectorAll('button')).find(x=>x.dataset.v===cover);assert.ok(b,`우점도 ${cover} 없음`);click(b);
+ };
+ await addVeg('소나무','3');await addVeg('개망초','1');await addVeg('억새','2');
+ test('한 층에 3종 연속 추가와 우점도 즉시 저장',()=>{const items=current().plots[0].items;assert.deepStrictEqual(items.map(x=>x.name),['소나무','개망초','억새']);assert.deepStrictEqual(items.map(x=>x.cover),['3','1','2']);});
+ input($('q'),'소나무');await sleep(90);click($('results').querySelector('li'));
+ test('이미 있는 식생 종 재탭은 삭제하지 않음',()=>assert.strictEqual(current().plots[0].items.length,3));
+ test('식생 연속입력 중 최근 버튼도 기존 종 표시',()=>assert.ok(Array.from($('recent').querySelectorAll('button')).some(b=>/✓ 소나무/.test(b.textContent))));
+ tab('sum');
+ test('다른 탭 이탈 시 식생 입력 맥락 자동 종료',()=>assert.strictEqual($('vegBanner').hidden,true));
+ tab('rec');input($('q'),'더덕');await sleep(90);click($('results').querySelector('li'));
+ test('이탈 후 식물상 입력이 과거 방형구에 들어가지 않음',()=>{assert.strictEqual(current().plots[0].items.length,3);assert.strictEqual(current().records.length,1);});
+ const oldSurveyId=current().id;
+ tab('veg');click($('plotWrap').querySelector('.add-sp'));
+ input($('q'),'질경이');await sleep(90);click($('results').querySelector('li'));
+ const staleUndo=$('toast').querySelector('.undo');assert.ok(staleUndo,'조사 전환 전 되돌리기 버튼 없음');
+ w.prompt=()=> '새 조사';click($('surveyBtn'));click($('ssNew'));
+ test('식생 입력 중 새 조사로 바꾸면 이전 맥락·되돌리기 종료',()=>{assert.strictEqual(state().surveys.length,2);assert.notStrictEqual(current().id,oldSurveyId);assert.strictEqual(current().plots.length,0);assert.strictEqual($('vegBanner').hidden,true);assert.strictEqual($('toast').querySelector('.undo'),null);});
+ click(staleUndo);
+ test('이전 조사의 오래된 되돌리기가 새 조사에서 작동하지 않음',()=>{const old=state().surveys.find(x=>x.id===oldSurveyId);assert.strictEqual(old.plots[0].items.length,4);});
+ tab('rec');input($('q'),'참억새');await sleep(90);click($('results').querySelector('li'));
+ test('새 조사 종이 이전 방형구로 들어가지 않음',()=>{const st=state(),old=st.surveys.find(x=>x.id===oldSurveyId);assert.strictEqual(old.plots[0].items.length,4);assert.strictEqual(current().records.length,1);});
+ test('식생 편집 시 개체수 행 숨김 규칙 존재',()=>assert.match(fs.readFileSync(path.join(root,'styles.css'),'utf8'),/#sheet\.veg-mode \.countrow\{display:none\}/));
+ test('핵심 식생 버튼 장갑 크기',()=>{const css=fs.readFileSync(path.join(root,'styles.css'),'utf8');assert.match(css,/\.layer-h \.add-sp\{[^}]*min-height:56px/s);assert.match(css,/\.vegbanner button\{[^}]*min-height:48px/s);});
+ test('실행 오류 없음',()=>assert.deepStrictEqual(errors,[]));
+ console.log(`결과: ${pass} passed, ${fail} failed`);process.exit(fail?1:0);
+})().catch(e=>{console.error('FAIL runtime',e);process.exit(1);});

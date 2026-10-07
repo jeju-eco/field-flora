@@ -327,7 +327,9 @@
     const ids = (state.recent || []).slice(0, 14);
     if (!ids.length) { wrap.innerHTML = '<p class="hint" style="padding:0 2px">종을 추가하면 여기에 쌓여 한 번에 다시 넣을 수 있습니다.</p>'; return; }
     const s = cur(); const site = curSite();
-    const have = new Set(s.records.filter((r) => r.siteId === site.id).map((r) => r.taxonId));
+    const have = vegCtx
+      ? new Set((vegCtx.plot.items || []).filter((it) => it.layer === vegCtx.layer).map((it) => it.taxonId))
+      : new Set(s.records.filter((r) => r.siteId === site.id).map((r) => r.taxonId));
     ids.forEach((id) => {
       const t = index && index.byId.get(id);
       if (!t) return;
@@ -440,15 +442,16 @@
       const { plot, layer } = vegCtx;
       const dup = (plot.items || []).find((it) => it.taxonId === t.i && it.layer === layer);
       if (dup) {
-        plot.items = plot.items.filter((it) => it.id !== dup.id);
-        save(true); buzz(20); toast(`${t.n} 취소됨`);
+        toast(`${t.n}은 이미 이 층에 기록됨`); buzz(8);
       } else {
         plot.items = plot.items || [];
-        plot.items.push({ id: uid(), taxonId: t.i, name: t.n, scientific: t.s || '', family: t.f || '',
-          layer, cover: '', note: '', at: Date.now() });
+        const item = { id: uid(), taxonId: t.i, name: t.n, scientific: t.s || '', family: t.f || '',
+          layer, cover: '', note: '', at: Date.now() };
+        plot.items.push(item);
+        vegCtx.lastItem = item;
         state.recent = [t.i].concat((state.recent || []).filter((x) => x !== t.i)).slice(0, 30);
+        pushUndo(`${t.n} 추가 · ${plot.name} ${C.LAYER_LABEL[layer]}층 · 우점도 선택 가능`, () => { plot.items = plot.items.filter((x) => x.id !== item.id); });
         save(true); buzz(15);
-        toast(`${t.n} → ${plot.name} ${C.LAYER_LABEL[layer]}층`);
       }
       renderVegBanner(); renderRecent();
       const q = $('q'); q.value = ''; renderResults([]); q.focus();
@@ -504,13 +507,14 @@
 
   function openSheet(rec) {
     sheetCtx = rec;
-    $('sheetTitle').textContent = rec.name;
+    $('sheet').classList.toggle('veg-mode', !!rec._veg);
+    $('sheetTitle').textContent = rec._veg ? `${rec.name} · 우점도` : rec.name;
     $('cNum').value = rec.count || 1;
     $('cNote').value = rec.note || '';
     [...$('coverBtns').children].forEach((b) => b.classList.toggle('on', b.dataset.v === rec.cover));
     $('sheet').hidden = false;
   }
-  function closeSheet() { $('sheet').hidden = true; sheetCtx = null; }
+  function closeSheet() { $('sheet').hidden = true; $('sheet').classList.remove('veg-mode'); sheetCtx = null; }
 
   /** 현재 위치를 한 번 읽어 콜백에 넘긴다. 실패해도 조사는 계속된다. */
   function getPos(cb) {
@@ -579,7 +583,10 @@
         lr.onblur = () => setCov('rate', lr.value);
         lh.onchange = () => setCov('height', lh.value);
         lh.onblur = () => setCov('height', lh.value);
-        box.querySelector('.add-sp').onclick = () => { setVegCtx({ plot: p, layer: L.v }); goTab('rec'); toast(`${p.name} ${L.label}층 — 종을 고르세요`); };
+        box.querySelector('.add-sp').onclick = () => {
+          setVegCtx({ plot: p, layer: L.v, returnScroll: document.querySelector('main').scrollTop, lastItem: null });
+          goTab('rec'); toast(`${p.name} ${L.label}층 — 종을 연속으로 고르세요`);
+        };
 
         const ul = box.querySelector('.layer-list');
         items.forEach((it) => {
@@ -608,12 +615,29 @@
   function renderVegBanner() {
     const el = $('vegBanner');
     if (!el) return;
-    if (!vegCtx) { el.hidden = true; return; }
+    const quick = $('vegQuick');
+    if (!vegCtx) { el.hidden = true; quick.hidden = true; quick.replaceChildren(); return; }
     const n = (vegCtx.plot.items || []).filter((it) => it.layer === vegCtx.layer).length;
-    $('vegBannerTxt').textContent = `${vegCtx.plot.name} · ${C.LAYER_LABEL[vegCtx.layer]}층 입력중 (${n}종)`;
+    $('vegBannerTxt').textContent = `${vegCtx.plot.name} · ${C.LAYER_LABEL[vegCtx.layer]}층 (${n}종)`;
+    quick.replaceChildren();
+    const item = vegCtx.lastItem;
+    if (item && (vegCtx.plot.items || []).includes(item)) {
+      const name = document.createElement('strong'); name.textContent = item.name + ' 우점도'; quick.appendChild(name);
+      C.COVER.forEach((c) => {
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = c.label; b.dataset.v = c.v;
+        if (item.cover === c.v) b.className = 'on';
+        b.onclick = () => {
+          item.cover = c.v; save(true); buzz(8);
+          quick.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+          $('q').focus();
+        };
+        quick.appendChild(b);
+      });
+      quick.hidden = false;
+    } else quick.hidden = true;
     el.hidden = false;
   }
-  function setVegCtx(v) { vegCtx = v; renderVegBanner(); renderResults(lastHits); }
+  function setVegCtx(v) { vegCtx = v; renderVegBanner(); renderResults(lastHits); renderRecent(); }
 
   function openPlotSheet(p) {
     plotCtx = p;
@@ -636,23 +660,58 @@
   let plotCtx = null;
 
   /* ───────── 훼손수목 ───────── */
-  function addTree() {
-    treeCtx = { id: uid(), name: '', scientific: '', family: '', taxonId: null,
-      dbh: '', height: '', crown: '', stems: 1, action: 'move', note: '',
+  let treeCtx = null;
+
+  function newTree(base) {
+    return { id: uid(), name: base ? base.name : '', scientific: base ? base.scientific : '',
+      family: base ? base.family : '', taxonId: base ? base.taxonId : null,
+      dbh: '', height: '', crown: '', stems: 1, action: base ? base.action : 'move', note: '',
       lat: null, lng: null, at: Date.now(), _new: true };
-    openTreeSheet(treeCtx);
+  }
+  function locateTree(target) {
+    const targetId = target.id;
     getPos((c) => {
-      if (c && treeCtx) { treeCtx.lat = +c.latitude.toFixed(6); treeCtx.lng = +c.longitude.toFixed(6); renderTreeSpec(); }
+      if (!c) return;
+      const saved = cur().trees.find((x) => x.id === targetId);
+      const live = saved || (treeCtx && treeCtx.id === targetId ? treeCtx : null);
+      if (!live) return;
+      live.lat = +c.latitude.toFixed(6); live.lng = +c.longitude.toFixed(6);
+      if (saved) save(true);
+      if (treeCtx && treeCtx.id === targetId) renderTreeSpec();
     });
   }
-  let treeCtx = null;
+  function addTree() {
+    const draft = newTree(null);
+    openTreeSheet(draft);
+    locateTree(draft);
+  }
+  function syncTreeFields() {
+    if (!treeCtx || treeCtx._new) return;
+    Object.assign(treeCtx, {
+      dbh: $('tDbh').value, height: $('tHeight').value, crown: $('tCrown').value,
+      stems: Math.max(1, parseInt($('tStems').value, 10) || 1), note: $('tNote').value,
+    });
+    save(true);
+  }
+  function persistTreeSpecies(t) {
+    if (!treeCtx) return;
+    treeCtx.taxonId = t.i; treeCtx.name = t.n;
+    treeCtx.scientific = t.s || ''; treeCtx.family = t.f || '';
+    if (treeCtx._new) {
+      delete treeCtx._new;
+      cur().trees.push(treeCtx);
+      flashId = treeCtx.id;
+    }
+    syncTreeFields();
+    renderTrees();
+  }
 
   function openTreeSheet(t) {
     treeCtx = t;
-    $('tsTitle').textContent = t._new ? '수목 기록' : '수목 수정';
+    $('tsTitle').textContent = t._new ? '수목 연속 기록' : `${t.name || '수목'} 수정`;
     $('tsQ').value = '';
     $('tsResults').innerHTML = '';
-    $('tsPicked').textContent = t.name ? `${t.name}${t.family ? ' · ' + t.family : ''}` : '수종을 먼저 고르세요';
+    $('tsPicked').textContent = t.name ? `${t.name}${t.family ? ' · ' + t.family : ''}` : '수종 선택 즉시 저장됩니다';
     $('tsPicked').className = 'picked' + (t.name ? ' ok' : '');
     $('tDbh').value = t.dbh || '';
     $('tHeight').value = t.height || '';
@@ -660,17 +719,19 @@
     $('tStems').value = Math.max(1, Number(t.stems) || 1);
     $('tNote').value = t.note || '';
     $('tsDel').hidden = !!t._new;
+    $('tsNext').disabled = !t.name;
     const row = $('tActions'); row.innerHTML = '';
     C.TREE_ACTIONS.forEach((a) => {
       const b = document.createElement('button');
       b.type = 'button'; b.textContent = a.label;
       b.dataset.v = a.v;
       if (a.v === t.action) b.className = 'on';
-      b.onclick = () => { t.action = a.v; openTreeSheetActions(); buzz(); };
+      b.onclick = () => { t.action = a.v; openTreeSheetActions(); syncTreeFields(); buzz(); };
       row.appendChild(b);
     });
     renderTreeSpec();
     $('tsheet').hidden = false;
+    setTimeout(() => { if (!t.name) $('tsQ').focus(); }, 0);
   }
   function openTreeSheetActions() {
     [...$('tActions').children].forEach((b) => {
@@ -709,7 +770,7 @@
         `<div class="sc">${esc(spec || '규격 미입력')}${t.stems > 1 ? ' · ' + t.stems + '본' : ''}` +
         `${t.lat != null ? ' · GPS✓' : ''}</div>` +
         `${t.note ? `<div class="fm">${esc(t.note)}</div>` : ''}</div>`;
-      li.onclick = () => openTreeSheet(Object.assign({}, t, { _new: false }));
+      li.onclick = () => openTreeSheet(t);
       ul.appendChild(li);
     });
   }
@@ -853,11 +914,16 @@
   /* ───────── 초기화 ───────── */
   /** 탭 전환을 한 곳에서 처리한다 (코드에서도 부를 수 있게) */
   function goTab(name) {
+    if (vegCtx && name !== 'rec') {
+      vegCtx = null; renderVegBanner(); renderRecent();
+      toast('식생 연속입력 종료');
+    }
     document.querySelectorAll('#tabbar button').forEach((x) => x.classList.toggle('on', x.dataset.tab === name));
     document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
     const sec = $('tab-' + name);
     if (sec) sec.classList.add('active');
     document.body.classList.toggle('tally-active', name === 'rec' && $('tab-rec').classList.contains('tally-mode'));
+    document.body.classList.toggle('veg-tab', name === 'veg');
     if (name === 'sum') renderSummary();
     if (name === 'site') renderSites();
     if (name === 'veg') renderVeg();
@@ -942,6 +1008,18 @@
     $('ssheet').querySelector('.sheet-bg').onclick = () => { $('ssheet').hidden = true; };
   }
 
+  function resetSurveyContext() {
+    if (vegCtx) setVegCtx(null);
+    treeCtx = null; plotCtx = null; siteCtx = null; sheetCtx = null;
+    tallyTaxon = null; tallyVisiblePending = null; xlsxReader = null;
+    undoAction = null;
+    const undoToast = $('toast');
+    clearTimeout(undoToast._t); undoToast.hidden = true; undoToast.textContent = ''; undoToast.classList.remove('withbtn');
+    ['sheet', 'tsheet', 'psheet', 'gsheet', 'tallySheetPicker'].forEach((id) => { const el = $(id); if (el) el.hidden = true; });
+    $('tab-rec').classList.remove('tally-mode'); document.body.classList.remove('tally-active');
+    $('tallyPanel').hidden = true;
+  }
+
   function bindSurveySheet() {
     $('surveyBtn').onclick = () => {
       const ul = $('surveyList'); ul.innerHTML = '';
@@ -963,6 +1041,7 @@
           if (!confirm(msg)) return;
           const i = state.surveys.indexOf(s);
           const wasCurrent = state.currentId === s.id;
+          if (wasCurrent) resetSurveyContext();
           state.surveys = state.surveys.filter((x) => x.id !== s.id);
           if (wasCurrent) state.currentId = state.surveys[0].id;
           pushUndo(`"${s.title}" 삭제`, () => {
@@ -972,7 +1051,10 @@
           save(true); renderAll();
           $('surveyBtn').onclick();   // 목록 갱신
         };
-        li.onclick = () => { state.currentId = s.id; save(true); $('ssheet').hidden = true; renderAll(); };
+        li.onclick = () => {
+          if (state.currentId !== s.id) resetSurveyContext();
+          state.currentId = s.id; save(true); $('ssheet').hidden = true; renderAll();
+        };
         ul.appendChild(li);
       });
       $('ssheet').hidden = false;
@@ -983,6 +1065,7 @@
   function doNewSurvey() {
     const title = prompt('새 조사명', '조사 ' + todayISO());
     if (title === null) return;
+    resetSurveyContext();
     const s = newSurvey(title.trim() || ('조사 ' + todayISO()));
     state.surveys.push(s); state.currentId = s.id;
     save(true); renderAll(); toast('새 조사 시작');
@@ -1003,49 +1086,63 @@
           const li = document.createElement('li');
           li.innerHTML = `<div class="meta"><div class="nm">${esc(t.n)}</div><div class="sc">${esc(t.s)}</div></div>`;
           li.onclick = () => {
-            treeCtx.taxonId = t.i; treeCtx.name = t.n;
-            treeCtx.scientific = t.s || ''; treeCtx.family = t.f || '';
+            persistTreeSpecies(t);
             $('tsPicked').textContent = `${t.n}${t.f ? ' · ' + t.f : ''}`;
             $('tsPicked').className = 'picked ok';
+            $('tsTitle').textContent = `${t.n} 연속 기록`;
+            $('tsDel').hidden = false; $('tsNext').disabled = false;
             tq.value = ''; ul.innerHTML = ''; buzz(15);
+            $('tDbh').focus();
+            toast(`${t.n} 기록 시작 · 입력 즉시 저장`);
           };
           ul.appendChild(li);
         });
       }, 60);
     };
+    tq.onkeydown = (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const first = $('tsResults').querySelector('li');
+      if (first) first.click();
+    };
     $('tsMic').onclick = () => startMic(tq, $('tsMic'));
 
-    // 장갑 낀 손으로도 누를 수 있는 큰 ± 버튼
+    // 장갑 낀 손으로도 누를 수 있는 큰 ± 버튼 — 변경 즉시 저장
     $('tsheet').querySelectorAll('.stepper button').forEach((b) => {
       b.onclick = () => {
         const f = b.dataset.f, d = parseFloat(b.dataset.d);
         const el = { dbh: $('tDbh'), height: $('tHeight'), crown: $('tCrown'), stems: $('tStems') }[f];
         const min = f === 'stems' ? 1 : 0;
         const v = Math.max(min, Math.round(((parseFloat(el.value) || 0) + d) * 10) / 10);
-        el.value = v; renderTreeSpec(); buzz();
+        el.value = v; renderTreeSpec(); syncTreeFields(); buzz();
       };
     });
-    ['tDbh', 'tHeight', 'tCrown'].forEach((id) => { $(id).oninput = renderTreeSpec; });
+    ['tDbh', 'tHeight', 'tCrown', 'tStems', 'tNote'].forEach((id) => {
+      $(id).oninput = () => { renderTreeSpec(); syncTreeFields(); };
+      $(id).onblur = syncTreeFields;
+    });
+    $('tsheet').querySelectorAll('.stems-quick button').forEach((b) => {
+      b.onclick = () => { $('tStems').value = b.dataset.n; syncTreeFields(); buzz(8); };
+    });
 
+    $('tsNext').onclick = () => {
+      if (!treeCtx || !treeCtx.name) { toast('수종을 먼저 고르세요'); return; }
+      syncTreeFields();
+      const next = newTree(treeCtx);
+      delete next._new;
+      cur().trees.push(next);
+      save(true); renderTrees(); openTreeSheet(next); locateTree(next);
+      $('tDbh').focus();
+      toast(`${next.name} 다음 규격 · 즉시 저장중`);
+    };
     $('tsOk').onclick = () => {
       if (!treeCtx) return;
       if (!treeCtx.name) { toast('수종을 먼저 고르세요'); buzz(30); return; }
-      const s = cur();
-      Object.assign(treeCtx, {
-        dbh: $('tDbh').value, height: $('tHeight').value, crown: $('tCrown').value,
-        stems: Math.max(1, parseInt($('tStems').value, 10) || 1),
-        note: $('tNote').value,
-      });
-      const isNew = treeCtx._new;
-      const rec = Object.assign({}, treeCtx);
-      delete rec._new;
-      if (isNew) s.trees.push(rec);
-      else s.trees = s.trees.map((x) => (x.id === rec.id ? rec : x));
-      flashId = rec.id;
-      save(true);
+      syncTreeFields();
+      const name = treeCtx.name;
       $('tsheet').hidden = true; treeCtx = null;
       renderTrees(); buzz(20);
-      toast(`${rec.name} ${isNew ? '기록' : '수정'}됨 · 총 ${C.summarizeTrees(s.trees).stems}본`);
+      toast(name ? `${name} 입력 완료 · 총 ${C.summarizeTrees(cur().trees).stems}본` : '입력 취소');
     };
     $('tsDel').onclick = () => {
       if (!treeCtx || treeCtx._new) { $('tsheet').hidden = true; treeCtx = null; return; }
@@ -1057,7 +1154,10 @@
       save(true); $('tsheet').hidden = true; treeCtx = null;
       renderTrees();
     };
-    $('tsheet').querySelector('.sheet-bg').onclick = () => { $('tsheet').hidden = true; treeCtx = null; };
+    $('tsheet').querySelector('.sheet-bg').onclick = () => {
+      if (treeCtx && treeCtx.name) syncTreeFields();
+      $('tsheet').hidden = true; treeCtx = null; renderTrees();
+    };
   }
 
   /** 방형구 시트 배선 */
@@ -1086,9 +1186,13 @@
 
     $('vegBannerEnd').onclick = () => {
       const p = vegCtx && vegCtx.plot;
+      const returnScroll = vegCtx && vegCtx.returnScroll;
       setVegCtx(null);
       toast('식생 입력 종료');
-      if (p) goTab('veg');
+      if (p) {
+        goTab('veg');
+        document.querySelector('main').scrollTop = returnScroll || 0;
+      }
     };
   }
 

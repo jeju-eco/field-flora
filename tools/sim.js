@@ -210,16 +210,17 @@ const ok = (msg) => console.log(`  · ${msg}`);
       await sleep(120);
       click($('results').querySelector('li:not(.more)'));
       await sleep(60);
+      click($('vegQuick').querySelector('button[data-v="3"]'));
       const p2 = S().plots[0];
-      ok(`방형구에 담김: ${(p2.items || []).length}종`);
+      ok(`방형구에 담김: ${(p2.items || []).length}종 · 소나무 우점도 ${(p2.items || [])[0].cover}`);
       if (!visible($('vegBanner'))) note('식생', '종을 넣은 뒤 배너가 사라져 계속 넣는지 알 수 없다');
-      // 식생 모드에서 여러 종 연속 입력
-      for (const sp of ['곰솔', '사스레피나무']) {
+      // 식생 모드에서 여러 종 + 우점도 연속 입력
+      for (const [sp, cv] of [['곰솔','2'], ['사스레피나무','1']]) {
         type($('q'), sp); await sleep(100);
         const f = $('results').querySelector('li:not(.more)');
-        if (f) { click(f); await sleep(50); }
+        if (f) { click(f); await sleep(50); click($('vegQuick').querySelector(`button[data-v="${cv}"]`)); }
       }
-      ok(`3종 연속 입력 후: ${(S().plots[0].items || []).length}종`);
+      ok(`3종+우점도 연속 입력: ${(S().plots[0].items || []).map(x => x.name + ':' + x.cover).join(', ')}`);
       click($('vegBannerEnd'));
       await sleep(60);
       ok(`완료 후 탭: ${[...$('tabbar').children].find((b) => b.classList.contains('on')).dataset.tab}`);
@@ -242,14 +243,19 @@ const ok = (msg) => console.log(`  · ${msg}`);
       await sleep(40);
       ok(`수종 선택: ${$('tsPicked').textContent}`);
     }
-    // 규격 입력
-    type($('tDbh'), '25'); type($('tHeight'), '8'); type($('tCrown'), '4');
-    type($('tStems'), '3');
-    ok(`규격 표기: ${$('tSpec').textContent}`);
+    // 같은 수종 3규격을 시트를 닫거나 재검색하지 않고 연속 입력
+    type($('tDbh'), '10'); type($('tHeight'), '5'); type($('tCrown'), '2');
+    click($('tActions').querySelector('[data-v="cut"]'));
+    click($('tsNext')); await sleep(40);
+    type($('tDbh'), '20'); type($('tHeight'), '7'); type($('tCrown'), '3');
+    click($('tsNext')); await sleep(40);
+    type($('tDbh'), '30'); type($('tHeight'), '9'); type($('tCrown'), '4');
+    ok(`세 번째 규격 표기: ${$('tSpec').textContent}`);
     click($('tsOk'));
     await sleep(60);
     const tr = S().trees;
-    ok(`수목 ${tr.length}본 기록: ${tr[0] ? JSON.stringify({ n: tr[0].name, dbh: tr[0].dbh, stems: tr[0].stems, act: tr[0].action }) : '-'}`);
+    ok(`곰솔 3규격 연속 기록: ${tr.map(x => `B${x.dbh}/${x.action}`).join(', ')}`);
+    if (tr.length !== 3) note('수목', `같은 수종 3규격 입력 결과가 ${tr.length}행`);
   }
 
   console.log('\n═══ 10. GPS 실패 상황 ═══');
